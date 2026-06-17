@@ -35,7 +35,9 @@ class AmerifluxData:
     data: pd.DataFrame
     bif: pd.DataFrame
     zmeas: pd.DataFrame
-
+    lat: float
+    lon: float
+    elev: float
 
 def retrieve_ameriflux(
     site_id: str,
@@ -65,6 +67,9 @@ def retrieve_ameriflux(
         data  : half-hourly (or hourly) timeseries with a DatetimeIndex.
         bif   : full site metadata from the BIF Excel file.
         zmeas : measurement heights for this site.
+        lat   : site latitude (degrees).
+        lon   : site longitude (degrees).
+        elev  : site elevation (metres).
 
     Examples
     --------
@@ -99,8 +104,9 @@ def retrieve_ameriflux(
             ) from e
 
         zmeas = _fetch_measurement_heights(site_id)
+        lat, lon, elev = _extract_location(bif) if bif is not None else (None, None, None)
 
-    return AmerifluxData(data=data, bif=bif, zmeas=zmeas)
+    return AmerifluxData(data=data, bif=bif, zmeas=zmeas, lat=lat, lon=lon, elev=elev)
 
 
 # ------------------------------------------------------------------
@@ -209,6 +215,17 @@ def _load_bif(bif_path: Path) -> pd.DataFrame | None:
     except Exception as e:
         print(f"Warning: could not load metadata from {bif_path.name}: {e}")
         return None
+
+
+def _extract_location(bif: pd.DataFrame) -> Tuple[float | None, float | None, float | None]:
+    try:
+        lat  = float(bif.query("VARIABLE == 'LOCATION_LAT'").iat[0, -1])
+        lon  = float(bif.query("VARIABLE == 'LOCATION_LONG'").iat[0, -1])
+        elev = float(bif.query("VARIABLE == 'LOCATION_ELEV'").iat[0, -1])
+        return lat, lon, elev
+    except Exception as e:
+        print(f"Warning: could not extract location from BIF: {e}")
+        return None, None, None
 
 
 def _fetch_measurement_heights(site_id: str) -> pd.DataFrame | None:

@@ -1,0 +1,4 @@
+requests
+* solarpy
+* tqdm (can change)
+* openpyxl
