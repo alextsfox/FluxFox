@@ -142,9 +142,6 @@ def ustar_filter_papale_2006(
         msg = f"Too many data classes! Each ustar class will only have {samples_per_ustar_class} samples per ta class per season per year! Must have at least 10, and ideally more. Consider decreasing: n_seasons (recommended: 4), n_ta_classes (recommended: 6), n_ustar_classes (recommended: 20)"
         raise ValueError(msg)
 
-
-
-
     # 1. select only nighttime data
     isday = compute_isday(df.index, lat, lon, elev, nighttime_swin)
     night_df = df.loc[~isday, [ta_col, ustar_col, nee_col]].dropna()
@@ -171,7 +168,7 @@ def ustar_filter_papale_2006(
                 # 4. correlation check: skip class if |R(TA<USTAR)| is too high
                 corr = ta_group[ta_col].corr(ta_group[ustar_col])
                 if abs(corr) >= ustar_ta_corr_cutoff:
-                    print(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
+                    warnings.warn(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
                     continue
 
                 # 5. split into U* classes, equal sample size
@@ -202,11 +199,10 @@ def ustar_filter_papale_2006(
 
     num_na = ustar_thresh_df.isna().sum().sum()
     if num_na / ustar_thresh_df.size > 0.5:
-        print(f"Warning! I was unable to determine a USTAR threshold for {num_na*100:.0f}% of the study period!")
+        warnings.warn(f"Warning! I was unable to determine a USTAR threshold for {num_na/ustar_thresh_df.size*100:.0f}% of the study period!")
 
     ustar_thresh_df.index = ustar_thresh_df.index.rename("Year")
     ustar_thresh_df.columns = ustar_thresh_df.columns.rename("Season")
-
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         max_by_season = np.nanquantile(ustar_thresh_df, gapfill_quantile, axis=0)
