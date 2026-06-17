@@ -25,7 +25,7 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 
-__all__ = ["xgboost_gapfill", "GapfillResult"]
+__all__ = ["xgb_gapfill", "GapfillResult"]
 
 
 @dataclass
@@ -90,7 +90,7 @@ def _default_search_space() -> dict:
     }
 
 
-def xgb_gapfill(
+def xgb_gapfill_liu_2025(
     df: pd.DataFrame,
     tgt_col: str,
     ta_col: Optional[str] = None,
