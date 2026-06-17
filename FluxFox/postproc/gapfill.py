@@ -10,10 +10,12 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 try:
     from skopt import BayesSearchCV
@@ -25,11 +27,12 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 
-__all__ = ["xgb_gapfill", "GapfillResult"]
-
+# --------
+# Liu 2025
+# --------
 
 @dataclass
-class GapfillResult:
+class XGBGapfillResult:
     """Container for diagnostic info about a gap-filling run.
 
     Attributes
@@ -75,10 +78,6 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def _default_search_space() -> dict:
     """A generic hyperparameter search space for HistGradientBoostingRegressor.
-
-    NOTE: the paper's actual search space is reported only in
-    supplementary Text S1, which was not available when writing this
-    function. Adjust this space for your data size / compute budget.
     """
     return {
         "learning_rate": Real(0.01, 0.3, prior="log-uniform"),
@@ -113,7 +112,7 @@ def xgb_gapfill_liu_2025(
     random_state: Optional[int] = None,
     search_space: Optional[dict] = None,
     verbose: bool = True,
-) -> GapfillResult:
+) -> XGBGapfillResult:
     """Gap-fill a flux time series using a gradient-boosted tree model.
 
     Based on Liu et al. (2025), "Robust filling of extra-long gaps in eddy covariance CO2 flux measurements from a temperate deciduous forest using eXtreme Gradient Boosting.", Agricultural and Forest Meteorology.
@@ -171,14 +170,14 @@ def xgb_gapfill_liu_2025(
 
     Returns
     -------
-    GapfillResult
+    XGBGapfillResult
         Dataclass containing the gap-filled series, a boolean
         "was gap-filled" indicator series, the fitted model, and
-        diagnostic information. (See ``GapfillResult`` docstring.)
+        diagnostic information. (See ``XGBGapfillResult`` docstring.)
     """
-    # ------------------------------------------------------------------
+    
     # 1. Validate inputs
-    # ------------------------------------------------------------------
+    
     if not isinstance(df, pd.DataFrame):
         msg = f"df must be a pandas DataFrame. Got {type(df).__name__}"
         raise TypeError(msg)
@@ -231,10 +230,10 @@ def xgb_gapfill_liu_2025(
         warnings.warn(msg, stacklevel=2)
         df = df.sort_index()
 
-    # ------------------------------------------------------------------
+    
     # 2. Build the feature matrix (named predictors + engineered time
     #    features), and a boolean target-missing mask.
-    # ------------------------------------------------------------------
+    
     work = _add_time_features(df[predictor_cols + [tgt_col]])
     engineered_cols = ["_doy_sin", "_doy_cos", "_timestamp"]
     feature_cols = predictor_cols + engineered_cols
@@ -265,11 +264,11 @@ def xgb_gapfill_liu_2025(
     X_all = work.loc[usable_for_training, feature_cols]
     y_all = work.loc[usable_for_training, tgt_col]
 
-    # ------------------------------------------------------------------
+    
     # 3. Hyperparameter search via BayesSearchCV on a train/test subset
     #    carved out of the usable data (this deviates from Liu et al. 
     #    to reduce computation time)
-    # ------------------------------------------------------------------
+    
     space = search_space if search_space is not None else _default_search_space()
 
     hyper_combined_frac = hyper_train_frac + hyper_test_frac
@@ -330,10 +329,10 @@ def xgb_gapfill_liu_2025(
             f"[xgb_gapfill] held-out hyper_test RMSE: {hyper_test_rmse:.4f}"
         )
 
-    # ------------------------------------------------------------------
+    
     # 4. Fit the final model with the best hyperparameters on a fresh
     #    train/test split (train_frac) drawn from the full usable pool.
-    # ------------------------------------------------------------------
+    
     X_train, X_test, y_train, y_test = train_test_split(
         X_all,
         y_all,
@@ -370,7 +369,7 @@ def xgb_gapfill_liu_2025(
     # that gap predictions benefit from the maximum available training
     # data, now that hyperparameters and diagnostics are settled.
     if verbose:
-        print(f"[xgb_gapfill] refitting final model on all usable rows")
+        print("[xgb_gapfill] refitting final model on all usable rows")
     final_model_full = HistGradientBoostingRegressor(
         random_state=random_state,
         early_stopping=True,
@@ -378,9 +377,9 @@ def xgb_gapfill_liu_2025(
     )
     final_model_full.fit(X_all, y_all)
 
-    # ------------------------------------------------------------------
+    
     # 5. Predict for all gap rows and assemble the output series.
-    # ------------------------------------------------------------------
+    
     filled = work[tgt_col].copy()
     was_gapfilled = pd.Series(False, index=df.index)
 
@@ -403,7 +402,7 @@ def xgb_gapfill_liu_2025(
     filled.name = tgt_col
     was_gapfilled.name = f"{tgt_col}_F"
 
-    return GapfillResult(
+    return XGBGapfillResult(
         filled=filled,
         was_gapfilled=was_gapfilled,
         model=final_model_full,
@@ -412,6 +411,284 @@ def xgb_gapfill_liu_2025(
         train_scores=train_scores,
     )
 
+
+
+# Reichstein 2005
+
+
+
+@dataclass
+class MDSGapfillResult:
+    """Container for MDS gap-filling output and diagnostics.
+    
+    Attributes
+    ----------
+    filled : pd.Series
+        The gap-filled time series.
+    was_gapfilled : pd.Series
+        Boolean series indicating which values were gap-filled.
+    method_used : pd.DataFrame
+        DataFrame indicating the method used for each gap-filled value. Has columns `method`, giving the method used and `window`, giving the window size used.
+        This can be used to understand which gap-filling strategy was applied to each missing value, and to assess the reliability of the filled values.
+        For example, if you gap-filled the FC column and only want the most reliable values, you could accept only those values, by rebuilding the filter:
+        ```
+        >>> # keep only reliable values: observed, or fullmeteo with smallest window (7 days)
+        >>> reliable = (
+        ...     gapfill_result.fill_method.eq("observed")
+        ...     | (
+        ...         gapfill_result.fill_method.eq("fullmeteo")
+        ...         & gapfill_result.fill_window_days.le(7)
+        ...     )
+        ... )
+        >>> filled.loc[~reliable] = np.nan
+        ```
+    n_filled : int
+        Number of values that were gap-filled.
+    n_remaining : int
+        Number of values that remain missing after gap-filling.
+    """
+    filled: pd.Series
+    was_gapfilled: pd.Series
+    method_used: pd.DataFrame
+    n_filled: int
+    n_remaining: int
+
+
+def mds_gapfill_reichstein_2005(
+    df: pd.DataFrame,
+    tgt_col: str,
+    ta_col: Optional[str] = None,
+    sw_in_col: Optional[str] = None,
+    vpd_col: Optional[str] = None,
+    tol_sw: Optional[float] = 50,
+    tol_ta: Optional[float] = 2.5,
+    tol_vpd: Optional[float] = 0.5,
+    max_window_days: int = 28,
+    min_samples: int = 5,
+    verbose: bool = True,
+) -> MDSGapfillResult:
+    """
+    Gap-fill a time series using Marginal Distribution Sampling (MDS).
+
+    Based on Reichstein et al. (2005), with a hierarchy similar to
+    common MDS implementations:
+
+    1. Similar meteorological conditions: radiation, temperature, VPD
+    2. Radiation-only similarity
+    3. Temperature-only similarity
+    4. Mean diurnal course
+    5. Local window mean fallback
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input dataframe. Must have a DatetimeIndex.
+    tgt_col : str
+        Target column to gap-fill, e.g. NEE, FC, LE, H.
+    ta_col : str, optional
+        Air temperature column.
+    sw_in_col : str, optional
+        Incoming shortwave radiation column.
+    vpd_col : str, optional
+        Vapor pressure deficit column.
+    tol_sw : float, default 50
+        Radiation tolerance, usually W m-2.
+    tol_ta : float, default 2.5
+        Air temperature tolerance, usually deg C.
+    tol_vpd : float, default 0.5
+        VPD tolerance. This default assumes VPD is in kPa.
+    max_window_days : int, default 28
+        Maximum half-window size in days.
+    min_samples : int, default 5
+        Minimum number of observed candidate values required for a fill.
+    verbose : bool, default True
+        Print progress summary.
+
+    Returns
+    -------
+    MDSGapfillResult
+        Dataclass containing the filled series, gap-fill flag, method
+        diagnostics, and fill counts.
+    """
+    # 1. Validate inputs
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError(f"df must be a pandas DataFrame, got {type(df).__name__}")
+
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise TypeError(
+            f"df.index must be a pandas DatetimeIndex, got {type(df.index).__name__}"
+        )
+
+    if tgt_col not in df.columns:
+        raise ValueError(f"tgt_col '{tgt_col}' not found in df.columns")
+
+    requested_cols = {
+        "ta_col": ta_col,
+        "sw_in_col": sw_in_col,
+        "vpd_col": vpd_col,
+    }
+    missing_cols = [
+        name for name, col in requested_cols.items()
+        if col is not None and col not in df.columns
+    ]
+    if missing_cols:
+        raise ValueError(f"The following requested columns are missing: {missing_cols}")
+    if all(col is None for col in [ta_col, sw_in_col, vpd_col]):
+        raise ValueError("At least one predictor column must be provided")
+    if max_window_days <= 0:
+        raise ValueError(f"max_window_days must be > 0, got {max_window_days}")
+    if min_samples <= 0:
+        raise ValueError(f"min_samples must be > 0, got {min_samples}")
+    if sw_in_col is not None and tol_sw is None:
+        raise ValueError("tol_sw must be provided when sw_in_col is provided")
+    if ta_col is not None and tol_ta is None:
+        raise ValueError("tol_ta must be provided when ta_col is provided")
+    if vpd_col is not None and tol_vpd is None:
+        raise ValueError("tol_vpd must be provided when vpd_col is provided")
+
+    # 2. Prepare data
+    if not df.index.is_monotonic_increasing:
+        df = df.sort_index()
+
+    work = df.copy()
+
+    filled = work[tgt_col].copy()
+    filled.name = tgt_col
+
+    was_gapfilled = pd.Series(False, index=work.index, name=f"{tgt_col}_F")
+    method_used = pd.DataFrame(index=work.index, columns=[f"{tgt_col}_method", f"{tgt_col}_window"])
+    method_used[f"{tgt_col}_method"] = "observed"
+    method_used[f"{tgt_col}_window"] = 0
+
+    gap_mask = work[tgt_col].isna()
+    gap_times = work.index[gap_mask]
+    method_used.loc[gap_mask] = ["unfilled", 0]
+
+    window_days_sequence = sorted(
+        set([
+            max(1, max_window_days // 4),
+            max(1, max_window_days // 2),
+            max_window_days,
+        ])
+    )
+
+    if verbose:
+        print(f"[mds_gapfill] {len(gap_times)} gaps to fill")
+
+    # 3. Fill each gap
+    for ts in tqdm(gap_times, desc="[mds_gapfill] Filling gaps"):
+        row = work.loc[ts]
+        filled_value = None
+        method = None
+
+        # Methods 1-3: meteorological similarity in expanding windows
+        for window_days in window_days_sequence:
+            radius = pd.Timedelta(days=window_days)
+            subset = work.loc[ts - radius: ts + radius]
+
+            # Use only observed target values as candidates.
+            valid = subset.loc[subset[tgt_col].notna()]
+
+            if len(valid) < min_samples:
+                continue
+
+            # Method 1: full available meteorological similarity.
+            sim_mask = pd.Series(True, index=df.index)
+            if sw_in_col is not None and pd.notna(row[sw_in_col]):
+                sim_mask &= np.abs(df[sw_in_col] - row[sw_in_col]) <= tol_sw
+            if ta_col is not None and pd.notna(row[ta_col]):
+                sim_mask &= np.abs(df[ta_col] - row[ta_col]) <= tol_ta
+            if vpd_col is not None and pd.notna(row[vpd_col]):
+                sim_mask &= np.abs(df[vpd_col] - row[vpd_col]) <= tol_vpd
+            candidates = valid.loc[sim_mask, tgt_col].dropna()
+
+            if len(candidates) >= min_samples:
+                filled_value = float(candidates.mean())
+                method = "fullmeteo"
+                methodwindow = window_days
+                break
+
+            # Method 2: radiation-only similarity.
+            if sw_in_col is not None and pd.notna(row[sw_in_col]):
+                rad_mask = np.abs(valid[sw_in_col] - row[sw_in_col]) <= tol_sw
+                candidates = valid.loc[rad_mask, tgt_col].dropna()
+
+                if len(candidates) >= min_samples:
+                    filled_value = float(candidates.mean())
+                    method = "rad"
+                    methodwindow = window_days
+                    break
+
+            # Method 3: temperature-only similarity.
+            if ta_col is not None and pd.notna(row[ta_col]):
+                ta_mask = np.abs(valid[ta_col] - row[ta_col]) <= tol_ta
+                candidates = valid.loc[ta_mask, tgt_col].dropna()
+
+                if len(candidates) >= min_samples:
+                    filled_value = float(candidates.mean())
+                    method = "ta"
+                    methodwindow = window_days
+                    break
+
+
+        # Method 4: mean diurnal course using expanding windows
+        if filled_value is None:
+            for window_days in window_days_sequence:
+                radius = pd.Timedelta(days=window_days)
+                subset = work.loc[ts - radius: ts + radius, tgt_col]
+
+                same_time = (
+                    (subset.index.hour == ts.hour)
+                    & (subset.index.minute == ts.minute)
+                )
+                candidates = subset.loc[same_time].dropna()
+
+                if len(candidates) >= min_samples:
+                    filled_value = float(candidates.mean())
+                    method = "mdc"
+                    methodwindow = window_days
+                    break
+
+
+        # Method 5: local window mean fallback
+        if filled_value is None:
+            radius = pd.Timedelta(days=max_window_days)
+            candidates = work.loc[ts - radius: ts + radius, tgt_col].dropna()
+
+            if len(candidates) >= min_samples:
+                filled_value = float(candidates.mean())
+                method = "fallbackmean"
+                methodwindow = max_window_days
+
+
+        # Apply result
+        if filled_value is not None:
+            filled.loc[ts] = filled_value
+            was_gapfilled.loc[ts] = True
+            method_used.loc[ts] = [method, methodwindow]
+
+    # 4. Summarize
+    n_filled = int(was_gapfilled.sum())
+    n_remaining = int(filled.isna().sum())
+
+    if verbose:
+        print(
+            f"[mds_gapfill] filled {n_filled} / {len(gap_times)} gaps "
+            f"({n_remaining} remaining)"
+        )
+
+    return MDSGapfillResult(
+        filled=filled,
+        was_gapfilled=was_gapfilled,
+        method_used=method_used,
+        n_filled=n_filled,
+        n_remaining=n_remaining,
+    )
+    
+
 __all__ = [
-    "xgb_gapfill"
+    "xgb_gapfill_liu_2025",
+    "XGBGapfillResult",
+    "mds_gapfill_reichstein_2005",
+    "MDSGapfillResult",
 ]

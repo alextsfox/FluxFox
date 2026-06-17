@@ -38,7 +38,7 @@ def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: fl
     panel.set_position(lat, lon, elev)
     dates = pd.date_range("2019-01-01", "2019-12-31 23:59:59", freq=timestamps[1] - timestamps[0])
     powers = []
-    for d in tqdm(dates):
+    for d in dates:
         panel.set_datetime(d.to_pydatetime())
         powers.append(panel.power())
     powers = pd.DataFrame({"SW_IN_POT": powers, "doy": dates.dayofyear, "h": dates.hour, "m":dates.minute})
@@ -56,7 +56,7 @@ def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: fl
 
     # leap days
     dates = df.index[df["SW_IN_POT"].isna()]
-    for d in tqdm(dates):
+    for d in dates:
         panel.set_datetime(d.to_pydatetime())
         df.loc[d, "SW_IN_POT"] = panel.power()
 
