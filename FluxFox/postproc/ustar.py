@@ -1,7 +1,7 @@
+# Author: Alex Fox
+# Created: 2026-06-17
 """
-Author: Alex Fox
-Created 2026-06-17
-Creates a U* filter for a given dataset based on air temperature, U*, and NEE.
+Creates a U* filter for a given dataset based on air temperature, U*, and NEE
 """
 
 
@@ -12,7 +12,7 @@ import pandas as pd
 
 from .utils import compute_isday
 
-def ustar_filter(
+def ustar_filter_papale_2006(
     df: pd.DataFrame,
     ta_col: str, ustar_col: str, nee_col: str,
     lat: float, lon: float, elev: float=0,
@@ -26,6 +26,15 @@ def ustar_filter(
 )->pd.Series:
     """
     Creates a U* filter for each season for each year in the dataset, following Papale et al (2006), Biogeosciences.
+
+    General description of method:
+    1. Select nighttime data based on a theoretical insolation threshold (`nighttime_swin`).
+    2. For each year, for each season, bin the data by air temperature into `n_ta_classes` classes of equal sample size.
+    3. Check the correlation between U* and TA. If |R(U*, TA)| > `ustar_ta_corr_cutoff`, skip the season.
+    4. For each temperature class, bin the data by U* into `n_ustar_classes` classes of equal sample size.
+    5. Identify the U* threshold: when U* plateaus within a temperature class (detected as U* being greater than `plateau_pct`*mean(USTAR) for all U* greater than in the current bin).
+    6. If the algorithm fails for any particular season, fill in the U* threshold using the `gapfill_quantile` first by season, then by year. If the entire pipeline fails, use `default_ustar_thresh`.
+    7. Return a boolean series indicating which data points pass the U* filter and a dataframe of U* thresholds by season and year.
 
     Parameters
     ----------

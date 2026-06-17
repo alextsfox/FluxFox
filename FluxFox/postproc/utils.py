@@ -1,3 +1,9 @@
+# Author: Alex Fox
+# Created: 2026-06-17
+"""
+Utility functions for post-processing eddy flux data.
+"""
+
 import pandas as pd
 import numpy as np
 import solarpy
