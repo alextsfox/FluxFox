@@ -23,7 +23,7 @@ def ustar_filter_papale_2006(
     plateau_pct: float=0.95,
     gapfill_quantile: float=0.75,
     default_ustar_thresh: float=0.2,
-)->pd.Series:
+)->tuple[pd.Series, pd.DataFrame]:
     """
     Creates a U* filter for each season for each year in the dataset, following Papale et al (2006), Biogeosciences.
 

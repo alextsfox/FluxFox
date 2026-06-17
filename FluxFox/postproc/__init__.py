@@ -4,7 +4,9 @@
 Post-processing functions for eddy flux data.
 """
 
-from .ustar import ustar_filter_papale_2006
 from . import utils
-
-__all__ = ["ustar_filter_papale_2006", "utils"]
+from .ustar import ustar_filter_papale_2006
+from .gapfill import xgb_gapfill
+from .despike import mad_despike_papale_2006
+    
+__all__ = ["ustar_filter_papale_2006", "xgb_gapfill", "mad_despike_papale_2006", "utils"]

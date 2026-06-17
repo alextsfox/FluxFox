@@ -12,7 +12,6 @@ import tempfile
 from io import StringIO
 from pathlib import Path
 from typing import List, Literal, Tuple
-import requests
 
 import pandas as pd
 
@@ -124,6 +123,7 @@ def _download_base_data(
     data_policy: str = "CCBY4.0",
     timeout: int = 120,
 ) -> List[Path]:
+    import requests
     if data_policy not in {"CCBY4.0", "LEGACY"}:
         raise ValueError("data_policy must be 'CCBY4.0' or 'LEGACY'")
     if intended_use not in _INTENDED_USE_MAP:

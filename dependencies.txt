@@ -1,4 +1,20 @@
-requests
+# all
+* pandas
+* numpy
+
+# optional
+* tqdm
+
+# ustar filter
 * solarpy
-* tqdm (can change)
+
+# xgb_gapfill
+* scikit-optimize
+* scikit-learn
+
+# ameriflux
+* requests
 * openpyxl
+
+# testing
+* pyarrow
