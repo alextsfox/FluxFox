@@ -229,6 +229,7 @@ def _extract_location(bif: pd.DataFrame) -> Tuple[float | None, float | None, fl
 
 
 def _fetch_measurement_heights(site_id: str) -> pd.DataFrame | None:
+    import requests
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
