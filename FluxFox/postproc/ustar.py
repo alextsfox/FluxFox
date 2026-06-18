@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .utils import compute_isday
+from .utils import _check_common_args
 
 @dataclass
 class UStarFilterResult:
@@ -36,8 +36,8 @@ class UStarFilterResult:
 
 def ustar_filter_papale_2006(
     df: pd.DataFrame,
+    isday: pd.Series,
     ta_col: str, ustar_col: str, nee_col: str,
-    lat: float, lon: float, elev: float=0,
     nighttime_swin: float=20,
     n_seasons: int=4,
     n_ta_classes: int=6, n_ustar_classes: int=20,
@@ -45,7 +45,7 @@ def ustar_filter_papale_2006(
     plateau_pct: float=0.95,
     gapfill_quantile: float=0.75,
     default_ustar_thresh: float=0.2,
-)->tuple[pd.Series, pd.DataFrame]:
+)->UStarFilterResult:
     """
     Creates a U* filter for each season for each year in the dataset, following Papale et al (2006), Biogeosciences.
 
@@ -65,18 +65,14 @@ def ustar_filter_papale_2006(
         Must have:
             * columns for air temperature, U*, and nee/fc/co2_flux (positive-upwards)
             * have a `pd.DatetimeIndex`. This index should be a meridian offset time, not a civil time. e.g. Anchorage, AK, USA has the civil time zone of UTC-8 in the Summer and UTC-9 in the Winter, but has a meridian offset time zone of UTC-10 (calculated from its longitude).
+    isday : pd.Series
+        Boolean series indicating daytime (`True`) and nighttime (`False`) for each timestamp in `df.index`. utils.compute_isday can be used to generate this series.
     ta_col : str
         The column name for air temperature in `df`.
     ustar_col : str
         The column name for ustar in `df`.
     nee_col : str
         The column name for nee/fc/co2_flux in `df`.
-    lat : float
-        The latitude of the site (decimal degrees).
-    lon : float
-        The longitude of the site (decimal degrees).
-    elev : float
-        The elevation above sea level of the site (meters). Default 0m.
     nighttime_swin : float
         The algorithm will simulate theoretical insolation on a flat plane, in W m-2. Whenever theoretical sw_in < `nighttime_swin`, the algorithm will assume it is nighttime and compute the ustar threshold on that data. Default 20 W m-2.
     n_seasons : int
@@ -96,18 +92,13 @@ def ustar_filter_papale_2006(
 
     Returns
     -------
-    ustar_flag : pd.Series
-        A pandas series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
-    ustar_thresh_df : pd.DataFrame
-        a pandas dataframe with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
+    UStarFilterResult
+        A dataclass containing:
+            * `ustar_flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
+            * `ustar_thresh_df`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
+            * `qual`: pd.DataFrame for each year/season in ustar_thresh_df indicating the quality of the U* threshold estimation (0=best, 1=acceptable, 2=poor)
     """
-
-    if not isinstance(df, pd.DataFrame):
-        msg = f"df must be a pandas DataFrame, got {type(df)}"
-        raise TypeError(msg)
-    if not isinstance(df.index, pd.DatetimeIndex):
-        msg = f"df.index must be a pandas DatetimeIndex, got {type(df.index)}"
-        raise TypeError(msg)
+    _check_common_args(df, isday)
     if n_seasons <= 0:
         msg = f"n_seasons must be > 0, got {n_seasons}"
         raise ValueError(msg)
@@ -121,7 +112,7 @@ def ustar_filter_papale_2006(
         msg = f"n_ta_classes should be >= 3, got {n_ta_classes}. TA classes that are too large can lead to confounding of the U* ~ NEE relationship by air temperature. Recommended value is ~6."
         warnings.warn(msg)
     if n_ustar_classes < 2:
-        msg = f"n_ustar_classes must be >= 1, got {n_ustar_classes}."
+        msg = f"n_ustar_classes must be >= 2, got {n_ustar_classes}."
         raise ValueError(msg)
     elif n_ustar_classes < 5:
         msg = f"n_ustar_classes should be >= 5, got {n_ustar_classes}. Use a higher value to increase precision. Recommended value is ~20."
@@ -152,7 +143,9 @@ def ustar_filter_papale_2006(
         raise ValueError(msg)
 
 
-    df = df.sort_index()
+    if not df.index.is_monotonic_increasing:
+        df = df.sort_index()
+        isday = isday.sort_index()
     # need about ~50 days worth of data in each season to get a reasonable estimate.
     min_night_samples_per_season_per_year = n_ta_classes*n_ustar_classes*2*5
     dt = df.index[1] - df.index[0]
@@ -165,7 +158,6 @@ def ustar_filter_papale_2006(
         raise ValueError(msg)
 
     # 1. select only nighttime data
-    isday = compute_isday(df.index, lat, lon, elev, nighttime_swin)
     night_df = df.loc[~isday, [ta_col, ustar_col, nee_col]].dropna()
 
     # 3. split by year

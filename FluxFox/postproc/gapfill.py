@@ -104,8 +104,8 @@ def xgb_gapfill_liu_2025(
     evi_col: Optional[str] = None,
     extra_predictor_cols: Optional[Sequence[str]] = None,
     n_missing_allowed: int = 0,
-    hyper_train_frac: float = 0.3,
-    hyper_test_frac: float = 0.1,
+    hyper_train_frac: float = 0.2,
+    hyper_test_frac: float = 0.07,
     train_frac: float = 0.8,
     n_bayes_iter: int = 50,
     cv_folds: int = 5,
@@ -141,7 +141,7 @@ def xgb_gapfill_liu_2025(
         this value are dropped before training. (Missing *target*
         values are handled separately -- those rows define the gaps
         to be filled, and are never used for training.)
-    hyper_train_frac, hyper_test_frac : float, default 0.3, 0.1
+    hyper_train_frac, hyper_test_frac : float, default 0.2, 0.07
         Fraction of the available (non-gap) data used, respectively,
         for training and testing during the BayesSearchCV hyperparameter
         search. These need not sum to 1; any remainder is unused during
@@ -226,8 +226,6 @@ def xgb_gapfill_liu_2025(
         raise ValueError(msg)
 
     if not df.index.is_monotonic_increasing:
-        msg = "df.index is not sorted in increasing order; sorting a copy before proceeding."
-        warnings.warn(msg, stacklevel=2)
         df = df.sort_index()
 
     
@@ -411,12 +409,6 @@ def xgb_gapfill_liu_2025(
         train_scores=train_scores,
     )
 
-
-
-# Reichstein 2005
-
-
-
 @dataclass
 class MDSGapfillResult:
     """Container for MDS gap-filling output and diagnostics.
@@ -541,6 +533,28 @@ def mds_gapfill_reichstein_2005(
         raise ValueError("tol_ta must be provided when ta_col is provided")
     if vpd_col is not None and tol_vpd is None:
         raise ValueError("tol_vpd must be provided when vpd_col is provided")
+
+    # tol_sw: Optional[float] = 50,
+    # tol_ta: Optional[float] = 2.5,
+    # tol_vpd: Optional[float] = 0.5,
+    # max_window_days: int = 28,
+    # min_samples: int = 5,
+    if tol_sw < 0:
+        raise ValueError(f"tol_sw must be >= 0, got {tol_sw}")
+    if tol_ta < 0:
+        raise ValueError(f"tol_ta must be >= 0, got {tol_ta}")
+    if tol_vpd < 0:
+        raise ValueError(f"tol_vpd must be >= 0, got {tol_vpd}")
+    if int(max_window_days) != max_window_days:
+        raise ValueError(f"max_window_days must be an integer, got {max_window_days}")
+    max_window_days = int(max_window_days)
+    if max_window_days < 4:
+        raise ValueError(f"max_window_days must be >= 4, got {max_window_days}")
+    if int(min_samples) != min_samples:
+        raise ValueError(f"min_samples must be an integer, got {min_samples}")
+    min_samples = int(min_samples)
+    if min_samples < 3:
+        raise ValueError(f"min_samples must be >= 3, got {min_samples}")
 
     # 2. Prepare data
     if not df.index.is_monotonic_increasing:

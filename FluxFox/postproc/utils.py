@@ -7,7 +7,6 @@ Utility functions for post-processing eddy flux data.
 import pandas as pd
 import numpy as np
 import solarpy
-from tqdm import tqdm
 
 def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: float=0, sw_thresh: float=20) -> pd.Series:
     """
@@ -62,3 +61,21 @@ def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: fl
 
     isday = df["SW_IN_POT"] > sw_thresh
     return isday.astype(bool).loc[timestamps]
+
+def _check_common_args(
+    df: pd.DataFrame,
+    isday: pd.Series,
+) -> None:
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("df must be a pandas DataFrame")
+    if not isinstance(isday, pd.Series):
+        raise TypeError("isday must be a pandas Series")
+    if not isday.index.equals(df.index):
+        raise ValueError("isday must have the same index as df")
+    if not isday.dtype == bool:
+        raise TypeError("isday must be of boolean dtype")
+    if not df.index.is_unique:
+        raise ValueError("df must have a unique index")
+    if not isinstance(df.index, pd.DatetimeIndex):
+        raise TypeError("df must have a DatetimeIndex")
+    

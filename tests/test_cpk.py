@@ -19,7 +19,7 @@ if __name__ == "__main__":
     
     
     
-    start, end = "2009-12-01", "2009-12-31"
+    start, end = "2008-12-31", "2009-12-31"
     cpk.loc[start:end, "FC"].plot(label="Original FC")
 
     # despike
@@ -45,11 +45,18 @@ if __name__ == "__main__":
         random_state=8472,
         verbose=True,
         
-        hyper_train_frac=0.3,
-        hyper_test_frac=0.3/3,
-        n_bayes_iter=50,
-        cv_folds=5,
+        hyper_train_frac=0.1,  # 0.3
+        hyper_test_frac=0.033,  # 0.1
+        n_bayes_iter=10,  #50
+        cv_folds=3,  # 5
     )
+    cpk.loc[:, "FC"] = gapfill_result.filled
+    cpk["FC"] = cpk["FC"] + cpk["FC"].quantile(0.5)
+    partition, res = postproc.gpp_reichstein_2005(cpk, "FC", "TA", lat=lat, lon=lon, elev=elev, sw_thresh=0)
+    partition.loc[start:end, ["GPP", "Reco"]].plot(label=["GPP", "Reco"])
+    cpk.loc[start:end, "FC"].plot(label="NEE")
+    plt.legend()
+    plt.show()
 
     # gapfill_result = postproc.mds_gapfill_reichstein_2005(
     #     cpk, "FC",
@@ -64,12 +71,14 @@ if __name__ == "__main__":
     #     verbose=True
     # )
 
-    cpk.loc[:, "FC"] = gapfill_result.filled
     
     # cpk.loc[start:end, "FC"].plot(label="Gapfilled FC", style='o', markersize=3)
     
-    from matplotlib import colors as mcolors
-    minmax = max(np.abs(np.nanquantile(cpk["FC"], 0.05)), np.abs(np.nanquantile(cpk["FC"], 0.95)))
-    norm = mcolors.TwoSlopeNorm(vmin=-minmax, vcenter=0, vmax=minmax)
-    ax = postproc.fingerprint_plot(cpk["FC"], norm=norm, cmap="RdBu", smear_days=7)
+    # from matplotlib import colors as mcolors
+    # minmax = max(np.abs(np.nanquantile(cpk["FC"], 0.05)), np.abs(np.nanquantile(cpk["FC"], 0.95)))
+    # norm = mcolors.TwoSlopeNorm(vmin=-minmax, vcenter=0, vmax=minmax)
+    # ax = postproc.fingerprint_plot(cpk["FC"], norm=norm, cmap="RdBu", smear_days=7)
+    plt.show()
+
+    plt.scatter(cpk.loc[start:end, "TA"], partition.loc[start:end, "Reco"])
     plt.show()
