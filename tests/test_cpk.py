@@ -50,7 +50,7 @@ if __name__ == "__main__":
     gapfill_result = postproc.mds_gapfill_reichstein_2005(
         cpk, "FC",
         ta_col="TA",
-        sw_in_col="PPFD_IN",
+        sw_in_col=None,
         vpd_col="VPD_PI",
         tol_sw=50,
         tol_ta=2.5,

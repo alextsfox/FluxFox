@@ -434,11 +434,7 @@ class MDSGapfillResult:
         ```
         >>> # keep only reliable values: observed, or fullmeteo with smallest window (7 days)
         >>> reliable = (
-        ...     gapfill_result.fill_method.eq("observed")
-        ...     | (
-        ...         gapfill_result.fill_method.eq("fullmeteo")
-        ...         & gapfill_result.fill_window_days.le(7)
-        ...     )
+        ...     gapfill_result["FC_fill_method"].isin(["observed", "fullmeteo"]) & gapfill_result["FC_fill_window_days"].le(7)
         ... )
         >>> filled.loc[~reliable] = np.nan
         ```
