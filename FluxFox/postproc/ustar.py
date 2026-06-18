@@ -34,7 +34,7 @@ class UStarFilterResult:
     qual: pd.DataFrame
 
 
-def ustar_filter_papale_2006(
+def ustar_papale_2006(
     df: pd.DataFrame,
     isday: pd.Series,
     ta_col: str, ustar_col: str, nee_col: str,

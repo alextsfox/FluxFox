@@ -55,7 +55,7 @@ class FalgeResult:
     Reco: pd.Series
     res: optimize.OptimizeResult
 
-def gpp_falge_2001(
+def gpp_night_falge_2001(
     df: pd.DataFrame,
     isday: pd.Series,
     nee_col: str,
@@ -133,7 +133,7 @@ class ReichsteinResult:
     E0_diag: pd.DataFrame
     R_ref_diag: pd.DataFrame
 
-def gpp_reichstein_2005(
+def gpp_night_reichstein_2005(
     df: pd.DataFrame,
     isday: pd.Series,
     nee_col: str,
@@ -294,4 +294,4 @@ def gpp_reichstein_2005(
 
 
 
-__all__ = ["ReichsteinResult", "FalgeResult", "gpp_reichstein_2005", "gpp_falge_2001"]
+__all__ = ["ReichsteinResult", "FalgeResult", "gpp_night_reichstein_2005", "gpp_night_falge_2001"]

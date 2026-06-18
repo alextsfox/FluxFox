@@ -12,7 +12,7 @@ import pandas as pd
 
 from .utils import _check_common_args
 
-def mad_despike_papale_2006(
+def despike_mad_papale_2006(
     df: pd.DataFrame,
     isday: pd.Series,
     cols_to_despike: list[str],
@@ -114,4 +114,4 @@ def mad_despike_papale_2006(
     return spike_flag
 
 
-__all__ = ["mad_despike_papale_2006"]
+__all__ = ["despike_mad_papale_2006"]

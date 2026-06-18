@@ -5,7 +5,7 @@ import matplotlib as mpl
 import pandas as pd
 import numpy as np
 
-def fingerprint_plot(
+def plot_fingerprint(
     y: pd.Series,
     smear_days: int = 0,
     na_color: str | tuple = "lightgrey",
@@ -85,4 +85,4 @@ def fingerprint_plot(
     
     return ax
 
-__all__ = ["fingerprint_plot"]
+__all__ = ["plot_fingerprint"]

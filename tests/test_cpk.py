@@ -23,17 +23,17 @@ if __name__ == "__main__":
     cpk.loc[start:end, "FC"].plot(label="Original FC")
 
     # despike
-    spike_flag = postproc.mad_despike_papale_2006(cpk, list(cpk), lat, lon, elev, z=4)
+    spike_flag = postproc.despike_mad_papale_2006(cpk, list(cpk), lat, lon, elev, z=4)
     cpk = cpk.where(spike_flag)
     cpk.loc[start:end, "FC"].plot(label="Despiked FC")
 
     # ustar filter
-    ustar_flag = postproc.ustar_filter_papale_2006(cpk, "TA", "USTAR", "FC", lat, lon, elev).flag
+    ustar_flag = postproc.ustar_papale_2006(cpk, "TA", "USTAR", "FC", lat, lon, elev).flag
     cpk.loc[~ustar_flag, ["H", "LE", "FC"]] = np.nan
     cpk.loc[start:end, "FC"].plot(label="Ustar Filtered FC")
 
     # gapfill
-    gapfill_result = postproc.xgb_gapfill_liu_2025(
+    gapfill_result = postproc.gapfill_xgb_liu_2025(
         cpk, "FC",
         ta_col="TA",
         ppfd_col="PPFD_IN",
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     )
     cpk.loc[:, "FC"] = gapfill_result.filled
     cpk["FC"] = cpk["FC"] + cpk["FC"].quantile(0.5)
-    partition, res = postproc.gpp_reichstein_2005(cpk, "FC", "TA", lat=lat, lon=lon, elev=elev, sw_thresh=0)
+    partition, res = postproc.gpp_night_reichstein_2005(cpk, "FC", "TA", lat=lat, lon=lon, elev=elev, sw_thresh=0)
     partition.loc[start:end, ["GPP", "Reco"]].plot(label=["GPP", "Reco"])
     cpk.loc[start:end, "FC"].plot(label="NEE")
     plt.legend()

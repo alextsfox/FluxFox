@@ -89,7 +89,7 @@ def _default_search_space() -> dict:
     }
 
 
-def xgb_gapfill_liu_2025(
+def gapfill_xgb_liu_2025(
     df: pd.DataFrame,
     tgt_col: str,
     ta_col: Optional[str] = None,
@@ -442,7 +442,7 @@ class MDSGapfillResult:
     n_remaining: int
 
 
-def mds_gapfill_reichstein_2005(
+def gapfill_mds_reichstein_2005(
     df: pd.DataFrame,
     tgt_col: str,
     ta_col: Optional[str] = None,
@@ -697,8 +697,8 @@ def mds_gapfill_reichstein_2005(
     
 
 __all__ = [
-    "xgb_gapfill_liu_2025",
+    "gapfill_xgb_liu_2025",
     "XGBGapfillResult",
-    "mds_gapfill_reichstein_2005",
+    "gapfill_mds_reichstein_2005",
     "MDSGapfillResult",
 ]
