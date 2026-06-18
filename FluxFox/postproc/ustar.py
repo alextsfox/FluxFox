@@ -6,11 +6,33 @@ Creates a U* filter for a given dataset based on air temperature, U*, and NEE
 
 
 import warnings
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from .utils import compute_isday
+
+@dataclass
+class UStarFilterResult:
+    """Container for U* filter output and diagnostics.
+    
+    Attributes
+    ----------
+    flag : pd.Series
+        Boolean series indicating which values pass the U* filter (False = fail)
+    thresholds : pd.DataFrame
+        DataFrame of U* thresholds by season and year.
+    qual : pd.DataFrame
+        DataFrame of U* quality metrics by season and year. 
+        0 = high quality estimate
+        1 = medium quality estimate (indicates low sample size or temperature correlation issues)
+        2 = low quality estimate (gap-filled)
+    """
+    flag: pd.Series
+    thresholds: pd.DataFrame
+    qual: pd.DataFrame
+
 
 def ustar_filter_papale_2006(
     df: pd.DataFrame,
@@ -148,6 +170,7 @@ def ustar_filter_papale_2006(
 
     # 3. split by year
     all_thresholds = np.full((len(np.unique(night_df.index.year)), n_seasons), np.nan)
+    all_ustar_qual = np.full((len(np.unique(night_df.index.year)), n_seasons), 0)
     yearly_thresholds = np.full(all_thresholds.shape[0], np.nan)
     for iyr, (yr, yr_group) in enumerate(night_df.groupby(night_df.index.year)):
         if yr_group.shape[0] < 1:
@@ -158,6 +181,7 @@ def ustar_filter_papale_2006(
         season_thresholds = np.full(n_seasons, np.nan)
         for ssn, ssn_group in yr_group.groupby(seasons):
             if ssn_group.shape[0] < min_night_samples_per_season_per_year:
+                all_ustar_qual[iyr, ssn] = 2  # failed, will need to gap-fill
                 continue
             
             # 3. split into TA classes of equal sample size
@@ -169,6 +193,7 @@ def ustar_filter_papale_2006(
                 corr = ta_group[ta_col].corr(ta_group[ustar_col])
                 if abs(corr) >= ustar_ta_corr_cutoff:
                     warnings.warn(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
+                    all_ustar_qual[iyr, ssn] = 1  # medium quality estimate
                     continue
 
                 # 5. split into U* classes, equal sample size
@@ -196,6 +221,9 @@ def ustar_filter_papale_2006(
         pd.DataFrame(all_thresholds)
         .set_index(np.unique(night_df.index.year))
     )
+    ustar_qual_df = pd.DataFrame(all_ustar_qual, index=np.unique(night_df.index.year), columns=range(n_seasons))
+    ustar_qual_df.index = ustar_qual_df.index.rename("Year")
+    ustar_qual_df.columns = ustar_qual_df.columns.rename("Season")
 
     num_na = ustar_thresh_df.isna().sum().sum()
     if num_na / ustar_thresh_df.size > 0.5:
@@ -224,4 +252,4 @@ def ustar_filter_papale_2006(
                 & ((df[ustar_col] <= ustar_thresh) | (df[ustar_col].isna()))
             ] = False
     
-    return ustar_flag, ustar_thresh_df
+    return UStarFilterResult(flag=ustar_flag, thresholds=ustar_thresh_df, qual=ustar_qual_df.astype(int))
