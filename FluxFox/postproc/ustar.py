@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from .utils import _check_common_args
+from .utils import _check_common_args, month_to_season, season_to_month
 
 @dataclass
 class UStarFilterResult:
@@ -132,8 +132,8 @@ def ustar_papale_2006(
     if nighttime_swin < 0:
         msg = f"nighttime_swin must be >= 0, got {nighttime_swin}."
         raise ValueError(msg)
-    elif nighttime_swin > 500:
-        msg = f"nighttime_swin should be <= 5000, got {nighttime_swin}. Recommended value is ~20 W m-2"
+    elif nighttime_swin > 100:
+        msg = f"nighttime_swin should be <= 100, got {nighttime_swin}. Recommended value is ~20 W m-2"
         warnings.warn(msg)
     if gapfill_quantile < 0:
         msg = f"gapfill_quantile must be >= 0, got {gapfill_quantile}."
@@ -169,7 +169,7 @@ def ustar_papale_2006(
             continue
         
         # 2. split into seasons
-        seasons = yr_group.index.month // n_seasons
+        seasons = month_to_season(yr_group.index.month, n_seasons)
         season_thresholds = np.full(n_seasons, np.nan)
         for ssn, ssn_group in yr_group.groupby(seasons):
             if ssn_group.shape[0] < min_night_samples_per_season_per_year:
@@ -240,7 +240,7 @@ def ustar_papale_2006(
             ustar_thresh = ustar_thresh_df.loc[yr, ssn]
             ustar_flag.loc[
                 (ustar_flag.index.year == yr) 
-                & (ustar_flag.index.month // n_seasons == ssn) 
+                & ((ustar_flag.index.month%12) // months_per_season == ssn) 
                 & ((df[ustar_col] <= ustar_thresh) | (df[ustar_col].isna()))
             ] = False
     

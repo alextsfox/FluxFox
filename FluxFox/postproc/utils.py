@@ -7,6 +7,7 @@ Utility functions for post-processing eddy flux data.
 import pandas as pd
 import numpy as np
 import solarpy
+from typing import Optional
 
 def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: float=0, sw_thresh: float=20) -> pd.Series:
     """
@@ -78,4 +79,41 @@ def _check_common_args(
         raise ValueError("df must have a unique index")
     if not isinstance(df.index, pd.DatetimeIndex):
         raise TypeError("df must have a DatetimeIndex")
+    
+
+def season_to_month(season: int, n_seasons: int) -> int:
+    """
+    Convert a season number to the starting month of that season.
+
+    Parameters
+    ----------
+    season : int
+        The season number (1-based).
+    n_seasons : int
+        The total number of seasons in a year.
+
+    Returns
+    -------
+    month : int
+        The starting month of the given season.
+    """
+    return (season - 1) * (12 // n_seasons) + 1
+
+def month_to_season(month: int, n_seasons: int) -> int:
+    """
+    Convert a month number to the corresponding season number.
+
+    Parameters
+    ----------
+    month : int
+        The month number (1-based).
+    n_seasons : int
+        The total number of seasons in a year.
+
+    Returns
+    -------
+    season : int
+        The season number corresponding to the given month.
+    """
+    return ((month - 1) // (12 // n_seasons)) + 1
     
