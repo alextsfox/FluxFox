@@ -463,7 +463,7 @@ def gpp_day_lasslop_2010(
     ).set_index("idx")
 
     daytime_diag = daytime_diag.loc[daytime_diag['success']]
-    daytime_params = daytime_diag[["idx", "alpha", "beta_0", "k", "R_ref"]]
+    daytime_params = daytime_diag[["alpha", "beta_0", "k", "R_ref"]]
     daytime_params = daytime_diag.reindex(df.index).interpolate(method="time")
 
     # calculate Reco and GPP: apply Lloyd-taylor
