@@ -24,14 +24,14 @@ from .utils import day_night_detection
 from .ustar import ustar_papale_2006
 from .gapfill import gapfill_xgb_liu_2025, gapfill_mds_reichstein_2005
 from .despike import despike_mad_papale_2006
-from .partition import gpp_night_reichstein_2005, gpp_night_falge_2001
+from .partition import gpp_night_reichstein_2005, gpp_night_falge_2001, gpp_day_lasslop_2010
 from .plot import plot_fingerprint
     
 __all__ = [
     "ustar_papale_2006", 
     "gapfill_xgb_liu_2025", "gapfill_mds_reichstein_2005", 
     "despike_mad_papale_2006", 
-    "gpp_night_reichstein_2005", "gpp_night_falge_2001",
+    "gpp_night_reichstein_2005", "gpp_night_falge_2001", "gpp_day_lasslop_2010",
     "plot_fingerprint",
     "day_night_detection"
 ]
