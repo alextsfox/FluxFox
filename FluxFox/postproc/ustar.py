@@ -173,7 +173,7 @@ def ustar_papale_2006(
         season_thresholds = np.full(n_seasons, np.nan)
         for ssn, ssn_group in yr_group.groupby(seasons):
             if ssn_group.shape[0] < min_night_samples_per_season_per_year:
-                all_ustar_qual[iyr, ssn] = 2  # failed, will need to gap-fill
+                all_ustar_qual[iyr, ssn-1] = 2  # failed, will need to gap-fill
                 continue
             
             # 3. split into TA classes of equal sample size
@@ -185,7 +185,7 @@ def ustar_papale_2006(
                 corr = ta_group[ta_col].corr(ta_group[ustar_col])
                 if abs(corr) >= ustar_ta_corr_cutoff:
                     warnings.warn(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
-                    all_ustar_qual[iyr, ssn] = 1  # medium quality estimate
+                    all_ustar_qual[iyr, ssn-1] = 1  # medium quality estimate
                     continue
 
                 # 5. split into U* classes, equal sample size
@@ -205,13 +205,14 @@ def ustar_papale_2006(
                     plateau_ustars.append(min(plateau_ustar_candidates))
 
             # 7. Median across TA classes: one threshold per season
-            season_thresholds[ssn] = np.nanmedian(plateau_ustars)
+            season_thresholds[ssn-1] = np.nanmedian(plateau_ustars)
         all_thresholds[iyr] = season_thresholds
         yearly_thresholds[iyr] = max(season_thresholds)
 
     ustar_thresh_df = (
         pd.DataFrame(all_thresholds)
         .set_index(np.unique(night_df.index.year))
+        .rename(columns=lambda x: x+1)
     )
     ustar_qual_df = pd.DataFrame(all_ustar_qual, index=np.unique(night_df.index.year), columns=range(n_seasons))
     ustar_qual_df.index = ustar_qual_df.index.rename("Year")
