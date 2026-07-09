@@ -33,8 +33,8 @@ def plot_fingerprint(
 
     Returns
     -------
-    plt.Axes
-        The matplotlib Axes object with the fingerprint plot.
+    im : matplotlib.collections.QuadMesh
+        The matplotlib QuadMesh object returned by `ax.pcolormesh` representing the fingerprint plot.
     """
     # sort y by the index, drop duplicates, and turn into a contiguous timeseries
     y = y.sort_index()
@@ -76,13 +76,13 @@ def plot_fingerprint(
         data_cmap = plt.cm.get_cmap(pcolormesh_kwargs.get("cmap", "RdBu")).copy()
         data_cmap.set_bad(color=na_color)
         pcolormesh_kwargs["cmap"] = data_cmap
-    ax.pcolormesh(TT, DD, YY, **pcolormesh_kwargs)
+    im = ax.pcolormesh(TT, DD, YY, **pcolormesh_kwargs)
     ax.set_ylabel("Date")
 
     ax.set_xticks(np.arange(0, 24, 2))
     ax.set_xlabel("Hour of Day")
     ax.set_title(y.name if y.name else "Fingerprint Plot")
     
-    return ax
+    return im
 
 __all__ = ["plot_fingerprint"]
