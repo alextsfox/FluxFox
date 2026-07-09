@@ -171,9 +171,9 @@ def ustar_papale_2006(
         # 2. split into seasons
         seasons = month_to_season(yr_group.index.month, n_seasons)
         season_thresholds = np.full(n_seasons, np.nan)
-        for ssn, ssn_group in yr_group.groupby(seasons):
+        for issn, (ssn, ssn_group) in enumerate(yr_group.groupby(seasons)):
             if ssn_group.shape[0] < min_night_samples_per_season_per_year:
-                all_ustar_qual[iyr, ssn-1] = 2  # failed, will need to gap-fill
+                all_ustar_qual[iyr, issn] = 2  # failed, will need to gap-fill
                 continue
             
             # 3. split into TA classes of equal sample size
@@ -185,7 +185,7 @@ def ustar_papale_2006(
                 corr = ta_group[ta_col].corr(ta_group[ustar_col])
                 if abs(corr) >= ustar_ta_corr_cutoff:
                     warnings.warn(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
-                    all_ustar_qual[iyr, ssn-1] = 1  # medium quality estimate
+                    all_ustar_qual[iyr, issn] = 1  # medium quality estimate
                     continue
 
                 # 5. split into U* classes, equal sample size
@@ -205,14 +205,13 @@ def ustar_papale_2006(
                     plateau_ustars.append(min(plateau_ustar_candidates))
 
             # 7. Median across TA classes: one threshold per season
-            season_thresholds[ssn-1] = np.nanmedian(plateau_ustars)
+            season_thresholds[issn] = np.nanmedian(plateau_ustars)
         all_thresholds[iyr] = season_thresholds
         yearly_thresholds[iyr] = max(season_thresholds)
 
     ustar_thresh_df = (
         pd.DataFrame(all_thresholds)
         .set_index(np.unique(night_df.index.year))
-        .rename(columns=lambda x: x+1)
     )
     ustar_qual_df = pd.DataFrame(all_ustar_qual, index=np.unique(night_df.index.year), columns=range(n_seasons))
     ustar_qual_df.index = ustar_qual_df.index.rename("Year")
@@ -227,21 +226,22 @@ def ustar_papale_2006(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         max_by_season = np.nanquantile(ustar_thresh_df, gapfill_quantile, axis=0)
-        for i, ssn in enumerate(ustar_thresh_df.columns):
-            ustar_thresh_df.loc[:, ssn] = ustar_thresh_df.loc[:, ssn].fillna(max_by_season[i])
+        for issn, ssn in enumerate(ustar_thresh_df.columns):
+            ustar_thresh_df.loc[:, ssn] = ustar_thresh_df.loc[:, ssn].fillna(max_by_season[issn])
         max_by_year = np.nanquantile(ustar_thresh_df, gapfill_quantile, axis=1)
-        for i, yr in enumerate(ustar_thresh_df.index):
-            ustar_thresh_df.loc[yr] = ustar_thresh_df.loc[yr].fillna(max_by_year[i])
+        for iyr, yr in enumerate(ustar_thresh_df.index):
+            ustar_thresh_df.loc[yr] = ustar_thresh_df.loc[yr].fillna(max_by_year[iyr])
     ustar_thresh_df = ustar_thresh_df.fillna(default_ustar_thresh)
 
     # build up list of flags
     ustar_flag = pd.Series(np.full(df.shape[0], True, dtype=bool), name="ustar_flag", index=df.index)
+    months_per_season = 12 // n_seasons
     for yr in ustar_thresh_df.index:
         for ssn in ustar_thresh_df.columns:
             ustar_thresh = ustar_thresh_df.loc[yr, ssn]
             ustar_flag.loc[
                 (ustar_flag.index.year == yr) 
-                & ((ustar_flag.index.month%12) // months_per_season == ssn) 
+                & month_to_season(ustar_flag.index.month, n_seasons) == ssn
                 & ((df[ustar_col] <= ustar_thresh) | (df[ustar_col].isna()))
             ] = False
     
