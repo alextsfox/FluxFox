@@ -94,8 +94,8 @@ def ustar_papale_2006(
     -------
     UStarFilterResult
         A dataclass containing:
-            * `ustar_flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
-            * `ustar_thresh_df`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
+            * `flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
+            * `thresholds`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
             * `qual`: pd.DataFrame for each year/season in ustar_thresh_df indicating the quality of the U* threshold estimation (0=best, 1=acceptable, 2=poor)
     """
     _check_common_args(df, isday)
@@ -235,7 +235,6 @@ def ustar_papale_2006(
 
     # build up list of flags
     ustar_flag = pd.Series(np.full(df.shape[0], True, dtype=bool), name="ustar_flag", index=df.index)
-    months_per_season = 12 // n_seasons
     for yr in ustar_thresh_df.index:
         for ssn in ustar_thresh_df.columns:
             ustar_thresh = ustar_thresh_df.loc[yr, ssn]
