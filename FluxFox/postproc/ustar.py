@@ -240,7 +240,7 @@ def ustar_papale_2006(
             ustar_thresh = ustar_thresh_df.loc[yr, ssn]
             ustar_flag.loc[
                 (ustar_flag.index.year == yr) 
-                & month_to_season(ustar_flag.index.month, n_seasons) == ssn
+                & (month_to_season(ustar_flag.index.month, n_seasons) == ssn)
                 & ((df[ustar_col] <= ustar_thresh) | (df[ustar_col].isna()))
             ] = False
     
