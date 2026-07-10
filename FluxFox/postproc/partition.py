@@ -68,8 +68,7 @@ def _fit_lt94(x_data: np.ndarray, y_data: np.ndarray, fix_E0: Optional[float] = 
 
 @dataclass
 class FalgeResult:
-    GPP: pd.Series
-    Reco: pd.Series
+    partitioned: pd.DataFrame
     res: optimize.OptimizeResult
 
 def gpp_night_falge_2001(
@@ -107,7 +106,7 @@ def gpp_night_falge_2001(
     Returns
     -------
     FalgeResult
-        Object containing partitioned GPP and Reco, and the optimization result (from scipy.optimize.minimize)
+        Object with a `partitioned` DataFrame (columns: GPP, Reco) and the optimization result (from scipy.optimize.minimize).
     """
     
     _check_common_args(df, isday)
@@ -132,19 +131,27 @@ def gpp_night_falge_2001(
     df_out['Reco'] = df_out['Reco'].clip(lower=0)
     
     return FalgeResult(
-        GPP=df_out['GPP'],
-        Reco=df_out['Reco'],
+        partitioned=df_out[['GPP', 'Reco']],
         res=res
     )
     
 @dataclass
 class ReichsteinResult:
     """
-    Diagnostics for the Reichstein et al. (2005) partitioning method.
-    Contains the fitted GPP and Reco timeseries, E0 parameter, the time-varying R_ref estimates, and diagnostic DataFrames for both E0 and R_ref displaying the optimize.OptimizeResult objects (Nelder-Mead method)
+    Result of the Reichstein et al. (2005) partitioning method.
+
+    Attributes
+    ----------
+    partitioned : pd.DataFrame
+        DataFrame with columns GPP and Reco (µmol m-2 s-1), indexed by the input DatetimeIndex.
+    params : pd.DataFrame
+        Time-varying fitted parameters (columns: E0, R_ref).
+    E0_diag : pd.DataFrame
+        Seasonal E0 estimates with diagnostics.
+    R_ref_diag : pd.DataFrame
+        Window-level R_ref estimates with diagnostics.
     """
-    GPP: pd.Series
-    Reco: pd.Series
+    partitioned: pd.DataFrame
     params: pd.DataFrame
     E0_diag: pd.DataFrame
     R_ref_diag: pd.DataFrame
@@ -205,7 +212,7 @@ def gpp_night_reichstein_2005(
     Returns
     -------
     ReichsteinResult
-        Object containing partitioned GPP and Reco, the time-varying E0 and R_ref estimates, and diagnostic DataFrames for both E0 and R_ref displaying the optimize.OptimizeResult objects (Nelder-Mead method).
+        Object with a `partitioned` DataFrame (columns: GPP, Reco), a `params` DataFrame (columns: E0, R_ref), and diagnostic DataFrames `E0_diag` and `R_ref_diag`.
     """
 
     _check_common_args(df, isday)
@@ -337,8 +344,7 @@ def gpp_night_reichstein_2005(
     GPP = GPP.clip(lower=0)
 
     results = ReichsteinResult(
-        GPP=GPP,
-        Reco=R_eco,
+        partitioned=pd.DataFrame({'GPP': GPP, 'Reco': R_eco}),
         params=pd.DataFrame({
             "E0": E0_values,
             "R_ref": R_ref
@@ -390,8 +396,7 @@ def _fit_lasslop_eq4(x_data: np.ndarray, y_data: np.ndarray, E0: float, R_ref_in
 
 @dataclass
 class LasslopResult:
-    GPP: pd.Series
-    Reco: pd.Series
+    partitioned: pd.DataFrame
     params: pd.DataFrame
     nighttime_diag: pd.DataFrame
     daytime_diag: pd.DataFrame
@@ -470,7 +475,7 @@ def gpp_day_lasslop_2010(
     Returns
     -------
     LasslopResult
-        Contains the estimated GPP and Reco time series, as well as the fitted parameters and diagnostic information for both nighttime and daytime fits.
+        Object with a `partitioned` DataFrame (columns: GPP, Reco), a `params` DataFrame (columns: E0, alpha, beta_0, k, R_ref), and diagnostic DataFrames `nighttime_diag` and `daytime_diag`.
 
     """
 
@@ -589,8 +594,7 @@ def gpp_day_lasslop_2010(
     R_eco = R_eco.clip(lower=0)
 
     return LasslopResult(
-        GPP=GPP,
-        Reco=R_eco,
+        partitioned=pd.DataFrame({'GPP': GPP, 'Reco': R_eco}),
         params=pd.concat([night_results.params[["E0"]], daytime_params[["alpha", "beta_0", "k", "R_ref"]]], axis=1),
         nighttime_diag=night_results.E0_diag,
         daytime_diag=daytime_diag
