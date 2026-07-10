@@ -118,7 +118,7 @@ def month_to_season(month: int, n_seasons: int) -> int:
     """
     return ((month - 1) // (12 // n_seasons)) + 1
 
-def compute_storage_single_point(
+def compute_single_point_storage_flux(
     df: pd.DataFrame,
     rho_col: str,
     co2_col: Optional[str] = None,
@@ -199,7 +199,7 @@ def compute_storage_single_point(
     if rho_col not in df.columns:
         raise ValueError(f"Column {rho_col} not found in dataframe")
 
-    dt = df.index.diff().total_seconds().median()
+    dt = np.nanmedian(df.index.diff().total_seconds().values)
     df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq=pd.Timedelta(seconds=dt))).sort_index()
     
     SC = None
@@ -269,4 +269,9 @@ def compute_storage_single_point(
     if SH is not None:
         df_out["SH"] = SH
     return df_out.reindex(df.index)
+
+__all__ = [
+    "compute_isday",
+    "compute_single_point_storage_flux"
+]
     

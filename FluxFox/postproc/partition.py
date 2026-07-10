@@ -15,6 +15,20 @@ from scipy import optimize
 
 from .utils import _check_common_args, month_to_season, season_to_month
 
+
+# Hard-coded limits on parameters
+_R_REF_LOWER = 0.0
+_R_REF_UPPER = np.inf
+_E0_LOWER = 50.0
+_E0_UPPER = 400.0
+_ALPHA_LOWER = 0.0
+_ALPHA_UPPER = 0.6
+_BETA_0_LOWER = 0.0
+_BETA_0_UPPER = 250
+_K_LOWER = 0.0
+_K_UPPER = np.inf
+
+
 def _lloyd_taylor_1994(T: np.ndarray, R_ref: float, E0: float) -> np.ndarray:
     """
     Lloyd and Taylor (1994) model of ecosystem respiration as a function of temperature.
@@ -33,17 +47,20 @@ def _fit_lt94(x_data: np.ndarray, y_data: np.ndarray, fix_E0: Optional[float] = 
         y_hat = _lloyd_taylor_1994(x_data, R_ref=R_ref, E0=E0)
         # return np.sum((y_data - y_hat) ** 2)
         return np.sum(np.abs(y_data - y_hat))
+    
+    R_ref_init = max(0, np.nanmean(y_data))
+    E0_init = 100.0
     if fix_E0 is not None:
         res = optimize.minimize(
             objective,
-            x0=np.array([2.0]), bounds=optimize.Bounds(lb=[-np.inf], ub=[np.inf]), 
+            x0=np.array([R_ref_init]), bounds=optimize.Bounds(lb=[_R_REF_LOWER], ub=[_R_REF_UPPER]), 
             method="Nelder-Mead", 
             options={'maxiter': 10_000, 'xatol': 1e-6, 'fatol':1e-6}
         )
     else:
         res = optimize.minimize(
             objective,
-            x0=np.array([2.0, 200.0]), bounds=optimize.Bounds(lb=[-np.inf, 0.0], ub=[np.inf, 650.0]), 
+            x0=np.array([R_ref_init, E0_init]), bounds=optimize.Bounds(lb=[_R_REF_LOWER, _E0_LOWER], ub=[_R_REF_UPPER, _E0_UPPER]), 
             method="Nelder-Mead", 
             options={'maxiter': 10_000, 'xatol': 1e-6, 'fatol':1e-6}
         )
@@ -83,9 +100,9 @@ def gpp_night_falge_2001(
     isday: pd.Series
         Boolean series indicating daytime observations. Must align with df. utils.compute_isday can be used to generate this series.
     nee_col: str
-        Name of the column containing NEE data. µmol m-2 s-1 preferred.
+        Name of the column containing NEE (CO2 flux, ideally storage-corrected) data. µmol m-2 s-1 required.
     t_col: str
-        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius preferred.
+        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius required.
     
     Returns
     -------
@@ -103,8 +120,8 @@ def gpp_night_falge_2001(
     
     R_ref, E0 = res.x
 
-    if R_ref < 1e-6 or E0 < 1e-7:
-        warnings.warn(f"Fitted R_ref ({R_ref}) or E0 ({E0}) are very small. Check data quality and fitting procedure. This is often caused by NEE being biased negative, especially at night.")
+    if R_ref <= _R_REF_LOWER or R_ref >= _R_REF_UPPER or E0 <= _E0_LOWER or E0 >= _E0_UPPER:
+        warnings.warn(f"Fitted R_ref ({R_ref}) or E0 ({E0}) are outside expected bounds. Check data quality, fitting parameters, and fitting procedure.")
     
     df_out = pd.DataFrame(index=df.index)
     df_out['Reco'] = _lloyd_taylor_1994(df[t_col].values, R_ref=R_ref, E0=E0)
@@ -142,6 +159,7 @@ def gpp_night_reichstein_2005(
     n_best_E0: int = 3,
     min_datapoints: int = 6,
     min_temp_range: float = 5.0,
+    num_seasons: int = 1,
 )-> ReichsteinResult:
     r"""
     Partitioning of NEE into GPP and Reco based on 
@@ -169,9 +187,9 @@ def gpp_night_reichstein_2005(
     isday : pd.Series
         Boolean series indicating daytime observations. Must align with df. utils.compute_isday can be used to generate this series.
     nee_col: str
-        Name of the column containing (storage-corrected) NEE data. µmol m-2 s-1 preferred.
+        Name of the column containing NEE (CO2 flux, ideally storage-corrected) data. µmol m-2 s-1 required.
     t_col: str
-        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius preferred.
+        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius required.
     E0_window_width_days : int, default=14
         Width of the moving window (in days) used to estimate E0. Changing this window can help resolve issues where no valid E0 estimates are obtained within a given season.
     R_ref_window_width_days : int, default=7
@@ -182,7 +200,8 @@ def gpp_night_reichstein_2005(
         Minimum number of data points required within a moving window to perform the estimation.
     min_temp_range : float, default=5.0
         Minimum temperature range (in °C) required within a moving window to perform the estimation.
-    
+    num_seasons : int, default=1
+        Number of seasons to divide the data into for E0 estimation. Typically 1 for a single season, increase this value if you suspect temporal variation in E0 within the year that warrants finer seasonal resolution.
     Returns
     -------
     ReichsteinResult
@@ -215,12 +234,13 @@ def gpp_night_reichstein_2005(
     R_ref_window_width_days = int(R_ref_window_width_days)
     n_best_E0 = int(n_best_E0)
     min_datapoints = int(min_datapoints)
+    num_seasons = int(num_seasons)
 
     nighttime_NEE = df.loc[~isday, [nee_col, t_col]].dropna()
 
     # estimate E0 from a collection of short nighttime windows. Estimate 1 value per season.
     years, seasons, E0s = [], [], []
-    for yrssn, group in nighttime_NEE[[t_col, nee_col]].groupby([nighttime_NEE.index.year, month_to_season(nighttime_NEE.index.month, 4)]):
+    for yrssn, group in nighttime_NEE[[t_col, nee_col]].groupby([nighttime_NEE.index.year, month_to_season(nighttime_NEE.index.month, num_seasons)]):
         year, season = yrssn
         E0_diag = []
         for idx, window in group.groupby(pd.Grouper(freq=f"{E0_window_width_days}D")):
@@ -238,13 +258,35 @@ def gpp_night_reichstein_2005(
             E0_diag.append([idx, success, status, fun, R_ref, E0, nit, nfev, npoints, trange])
         E0_diag = pd.DataFrame(E0_diag, columns=['idx', 'success', 'status', 'fun', 'R_ref', 'E0', 'nit', 'nfev', 'npoints', 'trange'])
         E0_diag = E0_diag.loc[E0_diag['success']].dropna()
+        
+        # Handle cases where E0 could not be reliably estimated.
         if E0_diag.shape[0] < n_best_E0:
             warnings.warn(f"Not enough successful E0 fits to compute a reliable estimate. Required: {n_best_E0}, available: {E0_diag.shape[0]}")
             E0 = np.nan
         else:
             E0 = E0_diag[["E0", "fun"]].sort_values("fun").iloc[:n_best_E0].mean()["E0"]
-        if E0 < 1e-6:
-            warnings.warn(f"Fitted E0 ({E0}) is very small for {year}, season {season}. Check data quality and fitting procedure. This is often caused by NEE being biased negative, especially at night.")
+        
+        E0_oob = 0
+        if E0 <= _E0_LOWER:
+            warnings.warn(f"Setting E0 to {E0} for {year}, season {season}, which is the lower bound. If this happens frequently, consider adjusting your fitting parameters or reviewing the quality of your data.")
+            E0 = np.nan
+            E0_oob = -1
+        elif E0 >= _E0_UPPER:
+            warnings.warn(f"Setting E0 to {E0} for {year}, season {season}, which is the upper bound. If this happens frequently, consider adjusting your fitting parameters or reviewing the quality of your data.")
+            E0 = np.nan
+            E0_oob = 1
+
+        if np.isnan(E0):
+            if len(E0s):
+                E0 = E0s[-1]
+            elif E0_oob == -1:
+                E0 = _E0_LOWER
+            elif E0_oob == 1:
+                E0 = _E0_UPPER
+            else:
+                E0 = np.nan
+                warnings.warn(f"Setting E0 to NaN for {year}, season {season} because it could not be determined from previous values or bounds.")
+
         years.append(year)
         seasons.append(season)
         E0s.append(E0)
@@ -255,7 +297,13 @@ def gpp_night_reichstein_2005(
     })
     E0_diag["Date"] = pd.to_datetime(E0_diag["year"].astype(str) + "-" + season_to_month(E0_diag["season"], 4).astype(str) + "-" + "01")
     E0_diag = E0_diag.set_index("Date").sort_index().drop(columns=["season", "year"])
-    E0_values = E0_diag["E0"].reindex(df.index.union(E0_diag.index)).ffill().bfill().reindex(df.index)
+
+    # n_obs_per_day = int(86_400 // np.nanmedian(df.index.diff().total_seconds()))
+    # days_per_season = (12 // num_seasons) * 31
+    # limit = int(n_obs_per_day * days_per_season * 2)
+    # print(days_per_season, n_obs_per_day, limit)
+    E0_values = E0_diag["E0"].reindex(df.index.union(E0_diag.index)).sort_index().ffill().bfill()
+    # ffill(limit=limit).bfill(limit=limit).reindex(df.index)
 
     # Estimate R_ref over time using the moving window approach.
     R_ref_diag = []
@@ -305,14 +353,14 @@ def _lasslop_2010_eq4(R_g: np.ndarray, T: np.ndarray, VPD: np.ndarray, alpha: fl
     """
     Lasslop et al. 2010 equation 4 for daytime GPP estimation.
     """
-    VPD_0 = 1.0  # kPa
+    VPD_0 = 10  # hPa
     beta = np.where(VPD < VPD_0, beta_0,  beta_0 * np.exp(-k * (VPD - VPD_0)))
     GPP = alpha*beta*R_g / (alpha*R_g + beta)
     Reco = _lloyd_taylor_1994(T=T, R_ref=R_ref, E0=E0)
-    NEE = Reco + GPP
+    NEE = Reco - GPP
     return NEE
 
-def _fit_lasslop_eq4(x_data: np.ndarray, y_data: np.ndarray, E0: float) -> Any:
+def _fit_lasslop_eq4(x_data: np.ndarray, y_data: np.ndarray, E0: float, R_ref_init: Optional[float] = None) -> Any:
     R_g = x_data[:, 0]
     T = x_data[:, 1]
     VPD = x_data[:, 2]
@@ -321,12 +369,19 @@ def _fit_lasslop_eq4(x_data: np.ndarray, y_data: np.ndarray, E0: float) -> Any:
         y_hat = _lasslop_2010_eq4(R_g, T, VPD, alpha, beta_0, k, R_ref, E0)
         # return np.sum((y_data - y_hat) ** 2)
         return np.sum(np.abs(y_data - y_hat))
+
+    alpha_init = 0.01
+    beta_0_init = max(10, np.abs(np.nanquantile(y_data, 0.03) - np.nanquantile(y_data, 0.97)))
+    k_init = 0
+    if R_ref_init is None or not np.isfinite(R_ref_init) or R_ref_init <= 0:
+        R_ref_init = max(1.0, np.nanmean(np.abs(y_data)))
+
     res = optimize.minimize(
         objective,
-        x0=np.array([0, 0, 0, 2.0]), 
+        x0=np.array([alpha_init, beta_0_init, k_init, R_ref_init]), 
         bounds=optimize.Bounds(
-            lb=[-np.inf, -np.inf, -np.inf, -np.inf], 
-            ub=[np.inf, np.inf, np.inf, np.inf]
+            lb=[_ALPHA_LOWER, _BETA_0_LOWER, _K_LOWER, _R_REF_LOWER], 
+            ub=[_ALPHA_UPPER, _BETA_0_UPPER, _K_UPPER, _R_REF_UPPER]
         ), 
         method="Nelder-Mead", 
         options={'maxiter': 10_000, 'xatol': 1e-6, 'fatol':1e-6}
@@ -356,6 +411,7 @@ def gpp_day_lasslop_2010(
     min_day_datapoints: int = 6,
     min_day_temp_range: float = 5.0,
     min_day_vpd_range: float = 0.5,
+    num_seasons: int = 1,
 )-> LasslopResult: 
     r"""
     Perform daytime GPP partitioning using the Lasslop et al. 2010 method.
@@ -385,13 +441,13 @@ def gpp_day_lasslop_2010(
     isday: pd.Series
         Boolean series indicating daytime observations. Must align with the index of `df`.
     nee_col: str
-        Name of the column containing NEE observations. µmol m-2 s-1 preferred.
+        Name of the column containing NEE (CO2 flux, ideally storage-corrected) observations. µmol m-2 s-1 required.
     t_col: str
-        Name of the column containing temperature observations. Degrees Celsius preferred.
+        Name of the column containing temperature observations. Must be in degrees Celsius.
     swin_col: str
-        Name of the column containing incoming radiation observations. W m-2 preferred.
+        Name of the column containing incoming radiation observations. Can also be PPFD. Unit-agnostic.
     vpd_col: str
-        Name of the column containing VPD observations. kPa preferred.
+        Name of the column containing VPD observations. Must be in hPa.
     night_window_width_days: int, optional
         Number of days to use for estimating nighttime E0. Default is 14. Adjusting this window can help resolve issues where no valid E0 estimates are obtained within a given season, but may increase uncertainty if set too small.
     day_window_width_days: int, optional
@@ -408,6 +464,8 @@ def gpp_day_lasslop_2010(
         Minimum temperature range required for daytime parameter estimation. Default is 5.0.
     min_day_vpd_range: float, optional
         Minimum VPD range required for daytime parameter estimation. Default is 0.5.
+    num_seasons: int, optional
+        Number of seasons to divide the data into for parameter estimation. Default is 1.
     
     Returns
     -------
@@ -415,6 +473,16 @@ def gpp_day_lasslop_2010(
         Contains the estimated GPP and Reco time series, as well as the fitted parameters and diagnostic information for both nighttime and daytime fits.
 
     """
+
+    # quick check on inputs
+    if (df[swin_col] < -50).any() or (df[swin_col] > 3000).any():
+        warnings.warn(f"Incoming radiation values out of expected range: min={df[swin_col].min()}W m-2 (or µmol m-2 s-1), max={df[swin_col].max()} W m-2 (or µmol m-2 s-1)")
+    if (df[t_col].min() < -60) or (df[t_col].max() > 100):
+        warnings.warn(f"Temperature values out of expected range: min={df[t_col].min()}°C, max={df[t_col].max()}°C")
+    if (df[vpd_col].min() < -0.5) or (df[vpd_col].max() > 80):
+        warnings.warn(f"VPD values out of expected range: min={df[vpd_col].min()} hPa, max={df[vpd_col].max()} hPa")
+    if (df[vpd_col].max() < 10):
+        warnings.warn(f"VPD values are unusually low: max={df[vpd_col].max()} hPa. Did you remember to convert to hPa?")
 
     # E0 is estimated from nighttime data. Re-use the gpp_night_reichstein_2005 function to obtain it.
     night_results = gpp_night_reichstein_2005(
@@ -426,14 +494,17 @@ def gpp_day_lasslop_2010(
         R_ref_window_width_days=day_window_width_days*10,
         n_best_E0=n_best_E0,
         min_datapoints=min_night_datapoints,
-        min_temp_range=min_night_temp_range
+        min_temp_range=min_night_temp_range,
+        num_seasons=num_seasons
     )
     E0 = night_results.params["E0"]
+    R_ref_night = night_results.params["R_ref"]
 
     daytime_NEE = df.loc[isday, [nee_col, t_col, swin_col, vpd_col]]
     daytime_diag = []
     for idx, window in daytime_NEE.groupby(pd.Grouper(freq=f"{day_window_width_days}D")):
         E0_window = E0.asof(idx)
+        R_ref_window = R_ref_night.asof(idx)
         window = window.dropna()
         if window.shape[0] < min_day_datapoints:
             continue
@@ -446,12 +517,44 @@ def gpp_day_lasslop_2010(
             res = _fit_lasslop_eq4(
                 x_data=window[[swin_col, t_col, vpd_col]].to_numpy(),
                 y_data=window[nee_col].to_numpy(),
-                E0=E0_window
+                E0=E0_window,
+                R_ref_init=float(R_ref_window)
             )
         except Exception as e:
             continue
 
         success, status, fun, alpha, beta_0, k, R_ref, nit, nfev = res.success, res.status, res.fun, *res.x, res.nit, res.nfev
+
+        # handle failures
+        # alpha: set to value of previous window. If not previous window exists and <0, set to 0.
+        if not success or np.isnan(alpha):
+            if len(daytime_diag):
+                print("setting alpha to prev val")
+                alpha = daytime_diag[-1][4]  # use alpha from previous window
+            else:
+                print("setting alpha to nan")
+                alpha = np.nan
+        
+        # k: set to 0
+        if not success or np.isnan(k):
+            print("setting k=0")
+            k = 0
+
+        # beta_0: if negative set to zero, else the whole parameter set is not used
+        if not success or np.isnan(beta_0):
+            beta_0 = np.nan
+            alpha = np.nan
+            k = np.nan
+            R_ref = np.nan
+        
+        # R_ref: whole parameter set is not used
+        if not success or np.isnan(R_ref):
+            alpha = np.nan
+            beta_0 = np.nan
+            k = np.nan
+            R_ref = np.nan
+    
+        
         daytime_diag.append([idx, success, status, fun, alpha, beta_0, k, R_ref, nit, nfev])
 
     daytime_diag = pd.DataFrame(
@@ -459,9 +562,15 @@ def gpp_day_lasslop_2010(
         columns=['idx', 'success', 'status', 'fun', 'alpha', 'beta_0', 'k', 'R_ref', 'nit', 'nfev']
     ).set_index("idx")
 
-    daytime_diag = daytime_diag.loc[daytime_diag['success']]
-    daytime_params = daytime_diag[["alpha", "beta_0", "k", "R_ref"]]
-    daytime_params = daytime_diag.reindex(df.index).interpolate(method="time")
+    # filter out major outliers
+    float_cols = ['alpha', 'beta_0', 'k', 'R_ref']
+    bad_vals = (daytime_diag[float_cols] >= daytime_diag[float_cols].quantile(0.99))
+    daytime_diag[float_cols] = daytime_diag[float_cols].mask(bad_vals)
+
+    # daytime_diag = daytime_diag.loc[daytime_diag['success']]
+    # daytime_params = daytime_diag[["alpha", "beta_0", "k", "R_ref"]]
+    # n_obs_per_day = int(86_400 // np.nanmedian(df.index.diff().total_seconds()))
+    daytime_params = daytime_diag.reindex(df.index).interpolate(method="time").bfill().ffill()
 
     # calculate Reco and GPP: apply Lloyd-taylor
     R_eco = _lloyd_taylor_1994(T=df[t_col], R_ref=daytime_params['R_ref'], E0=E0)
@@ -482,11 +591,8 @@ def gpp_day_lasslop_2010(
     return LasslopResult(
         GPP=GPP,
         Reco=R_eco,
-        params=pd.concat([night_results.params[["E0"]], daytime_params], axis=1),
+        params=pd.concat([night_results.params[["E0"]], daytime_params[["alpha", "beta_0", "k", "R_ref"]]], axis=1),
         nighttime_diag=night_results.E0_diag,
         daytime_diag=daytime_diag
     )
-
-
-
 __all__ = ["ReichsteinResult", "FalgeResult", "LasslopResult", "gpp_night_reichstein_2005", "gpp_night_falge_2001", "gpp_day_lasslop_2010"]

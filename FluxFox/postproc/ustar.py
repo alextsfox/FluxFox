@@ -71,15 +71,15 @@ def ustar_papale_2006(
     ustar_col : str
         The column name for ustar in `df`. m s-1 preferred.
     nee_col : str
-        The column name for nee/fc/co2_flux in `df`. Unit-agnostic.
+        The column name for NEE (storage-corrected CO2 flux is preferred over turbulent CO2 flux alone) in `df`. Unit-agnostic.
     n_seasons : int
-        The number of seasons in the year. Default 4.
+        The number of seasons in the year. Default 4. Increase this value if you want finer seasonal resolution for U* threshold estimation. Decrease this value if the algorithm has trouble converging on a solution.
     n_ta_classes : int
-        The number of air temperature classes. Default 6.
+        The number of air temperature classes. Default 6. Increase this value to limit the impact of temperature variation on the final U* threshold. Decrease this value if the algorithm has trouble converging on a solution.
     n_ustar_classes : int
-        The number of U* classes. Default 20.
+        The number of U* classes. Default 20. Increase this value for more precise determination of the U* threshold. Decrease this value if the algorithm has trouble converging on a solution.
     ustar_ta_corr_cutoff : float
-        The maximum acceptable correlation between U* and TA. Seasons where |R(U*, TA)| > `ustar_ta_corr_cutoff` will be skipped to avoid confounding the U* ~ NEE relationship. Default 0.4
+        The maximum acceptable correlation between U* and TA. Seasons where |R(U*, TA)| > `ustar_ta_corr_cutoff` will be skipped to avoid confounding the U* ~ NEE relationship. Default 0.4. Increase this value to allow more correlation between U* and TA before skipping a season. Decrease this value to be more strict about the correlation threshold, however, it is recommended to also increase `n_ta_classes` to reduce the impact of temperature variation when the correlation threshold is looser.
     plateau_pct : float
         Criterion used to identify a plateau in the U* ~ NEE relationship. After binning seasonal data by TA, the data is binned by U*. If U* for a given bin is greater than `plateau_pct`*mean(USTAR) for all USTAR greater than in the current bin, then a plateau has been reached. Default 0.95.
     gapfill_quantile : float
@@ -94,6 +94,30 @@ def ustar_papale_2006(
             * `flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
             * `thresholds`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
             * `qual`: pd.DataFrame for each year/season in ustar_thresh_df indicating the quality of the U* threshold estimation (0=best, 1=acceptable, 2=poor)
+    
+    Important
+    ---------
+    Storage correction or no storage correction?
+
+    It is recommended to use storage-corrected NEE rather than turbulent CO2 flux alone for this method, but this depends on your goals.
+
+    This method uses the relationship between nighttime NEE and U* to identify periods of insufficient turbulent mixing. 
+    Under stable conditions, weakened turbulence allows CO2 to enter the ecosystem through non-turbulent mechanisms (storage and advection).
+    Additionally, under stable conditions, the underlying assumptions of eddy covariance may be violated (e.g., the Reynolds time average may not converge to the ensemble average quickly enough, leading to high uncertainty in turbulent fluxes).
+    As a result, the turbulent flux alone may underestimate the magnitude of the total ecosystem-atmosphere CO2 exchange.
+    This does not imply that turbulent fluxes measured at low U* are unreliable. 
+    Rather, this implies that turbulent fluxes alone are no longer representative of the total ecosystem-atmosphere exchange under low U* conditions.
+    
+    When using storage-corrected NEE, more of the total ecosystem-atmosphere CO2 exchange is captured, making the relationship between nighttime NEE and U* more physically meaningful.
+    In many cases, providing NEE with a storage correction applied reduces the apparent dependence of nighttime NEE on U*, 
+    which can lead to a lower estimated threshold and less data loss when applying a U* filter.
+
+    However, some measurement systems produce more and less reliable raw gas concentrations, making storage terms more or less defensible.
+    If your measurement system generated poor estimates of raw gas concentrations (e.g., your instrument doesn't get calibrated frequently enough), then applying a storage correction may introduce more uncertainty than it resolves.
+
+    **In summary:** Storage-corrected NEE is preferred for estimating U* thresholds because it provides a more complete representation of nighttime ecosystem-atmosphere CO2 exchange.
+    When using storage-corrected NEE to determine U* thresholds, you should perform all future analyses using storage-corrected fluxes (e.g. FC + SC, H + SC, LE + SLE instead of FC, H, and LE by themselves).
+    However, if you do not have access to high-quality storage flux measurements, then using storage-corrected NEE may introduce more uncertainty than it resolves, and you may need to rely on turbulent fluxes alone for U* threshold estimation.
     """
     _check_common_args(df, isday)
     if n_seasons <= 0:

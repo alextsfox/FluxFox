@@ -20,7 +20,7 @@ A typical workflow involves
 5. Plotting 
 """
 
-from .utils import compute_isday
+from .utils import compute_isday, compute_single_point_storage_flux
 from .ustar import ustar_papale_2006
 from .gapfill import gapfill_xgb_liu_2025, gapfill_mds_reichstein_2005
 from .despike import despike_mad_papale_2006
@@ -33,5 +33,5 @@ __all__ = [
     "despike_mad_papale_2006", 
     "gpp_night_reichstein_2005", "gpp_night_falge_2001", "gpp_day_lasslop_2010",
     "plot_fingerprint",
-    "compute_isday"
+    "compute_isday", "compute_single_point_storage_flux"
 ]
