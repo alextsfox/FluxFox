@@ -38,7 +38,6 @@ def ustar_papale_2006(
     df: pd.DataFrame,
     isday: pd.Series,
     ta_col: str, ustar_col: str, nee_col: str,
-    nighttime_swin: float=20,
     n_seasons: int=4,
     n_ta_classes: int=6, n_ustar_classes: int=20,
     ustar_ta_corr_cutoff: float=0.4,
@@ -68,13 +67,11 @@ def ustar_papale_2006(
     isday : pd.Series
         Boolean series indicating daytime (`True`) and nighttime (`False`) for each timestamp in `df.index`. utils.compute_isday can be used to generate this series.
     ta_col : str
-        The column name for air temperature in `df`.
+        The column name for air temperature in `df`. Unit-agnostic.
     ustar_col : str
-        The column name for ustar in `df`.
+        The column name for ustar in `df`. m s-1 preferred.
     nee_col : str
-        The column name for nee/fc/co2_flux in `df`.
-    nighttime_swin : float
-        The algorithm will simulate theoretical insolation on a flat plane, in W m-2. Whenever theoretical sw_in < `nighttime_swin`, the algorithm will assume it is nighttime and compute the ustar threshold on that data. Default 20 W m-2.
+        The column name for nee/fc/co2_flux in `df`. Unit-agnostic.
     n_seasons : int
         The number of seasons in the year. Default 4.
     n_ta_classes : int
@@ -128,12 +125,6 @@ def ustar_papale_2006(
         raise ValueError(msg)
     elif plateau_pct < 0.75:
         msg = f"plateau_pct should be >= 0.75, got {plateau_pct}. Using too low a value can result in underestimation of the U* threshold. Recommended value is ~0.95"
-        warnings.warn(msg)
-    if nighttime_swin < 0:
-        msg = f"nighttime_swin must be >= 0, got {nighttime_swin}."
-        raise ValueError(msg)
-    elif nighttime_swin > 100:
-        msg = f"nighttime_swin should be <= 100, got {nighttime_swin}. Recommended value is ~20 W m-2"
         warnings.warn(msg)
     if gapfill_quantile < 0:
         msg = f"gapfill_quantile must be >= 0, got {gapfill_quantile}."

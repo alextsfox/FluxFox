@@ -83,9 +83,9 @@ def gpp_night_falge_2001(
     isday: pd.Series
         Boolean series indicating daytime observations. Must align with df. utils.compute_isday can be used to generate this series.
     nee_col: str
-        Name of the column containing NEE data.
+        Name of the column containing NEE data. µmol m-2 s-1 preferred.
     t_col: str
-        Name of the column containing air temperature (or soil temperature) data.
+        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius preferred.
     
     Returns
     -------
@@ -147,7 +147,7 @@ def gpp_night_reichstein_2005(
     Partitioning of NEE into GPP and Reco based on 
     Reichstein et al. (2005). "On the separation of net ecosystem exchange into assimilation and ecosystem respiration: review and improved algorithm," Global Change Biology
 
-    This method is a more sophisticated approach compared to Falge 2001, as it accounts for temporal variability in ecosystem respiration.
+    This method is a more sophisticated approach compared to Falge 2001, as it accounts for temporal variability in ecosystem respiration, but is still solely reliant on nighttime NEE to predict daytime GPP.
 
     This method fits a Lloyd-Taylor model to nighttime NEE data to estimate ecosystem respiration parameters in 2 stages:
     1. Estimate E0:
@@ -169,15 +169,15 @@ def gpp_night_reichstein_2005(
     isday : pd.Series
         Boolean series indicating daytime observations. Must align with df. utils.compute_isday can be used to generate this series.
     nee_col: str
-        Name of the column containing (storage-corrected) NEE data.
+        Name of the column containing (storage-corrected) NEE data. µmol m-2 s-1 preferred.
     t_col: str
-        Name of the column containing air temperature (or soil temperature) data.
+        Name of the column containing air temperature (or soil temperature) data. Degrees Celsius preferred.
     E0_window_width_days : int, default=14
-        Width of the moving window (in days) used to estimate E0
+        Width of the moving window (in days) used to estimate E0. Changing this window can help resolve issues where no valid E0 estimates are obtained within a given season.
     R_ref_window_width_days : int, default=7
         Width of the moving window (in days) used to estimate R_ref
     n_best_E0 : int, default=3
-        Number of best E0 estimates to consider based on the smallest standard error.
+        Number of best E0 estimates to consider based on the smallest standard error. Decreasing this number will make the estimate more selective, potentially resolving issues where not enough valid E0 estimates are obtained, but increasing uncertainty.
     min_datapoints : int, default=6
         Minimum number of data points required within a moving window to perform the estimation.
     min_temp_range : float, default=5.0
@@ -255,15 +255,12 @@ def gpp_night_reichstein_2005(
     })
     E0_diag["Date"] = pd.to_datetime(E0_diag["year"].astype(str) + "-" + season_to_month(E0_diag["season"], 4).astype(str) + "-" + "01")
     E0_diag = E0_diag.set_index("Date").sort_index().drop(columns=["season", "year"])
-    E0_values = E0_diag["E0"].reindex(df.index)
-    # gapfill: first by month, then by year:
-    E0_values = E0_values.fillna(E0_values.groupby(E0_values.index.month).transform("mean"))
-    E0_values = E0_values.fillna(E0_values.groupby(E0_values.index.year).transform("mean"))
+    E0_values = E0_diag["E0"].reindex(df.index.union(E0_diag.index)).ffill().bfill().reindex(df.index)
 
     # Estimate R_ref over time using the moving window approach.
     R_ref_diag = []
     for idx, window in nighttime_NEE[[t_col, nee_col]].groupby(pd.Grouper(freq=f"{R_ref_window_width_days}D")):
-        E0 = E0_values.loc[idx] if idx in E0_values.index else np.nan
+        E0 = E0_values.asof(idx)
         window = window.dropna()
         if window.shape[0] < min_datapoints or window[t_col].max() - window[t_col].min() < min_temp_range:
             continue
@@ -388,19 +385,19 @@ def gpp_day_lasslop_2010(
     isday: pd.Series
         Boolean series indicating daytime observations. Must align with the index of `df`.
     nee_col: str
-        Name of the column containing NEE observations.
+        Name of the column containing NEE observations. µmol m-2 s-1 preferred.
     t_col: str
-        Name of the column containing temperature observations.
+        Name of the column containing temperature observations. Degrees Celsius preferred.
     swin_col: str
-        Name of the column containing incoming radiation observations.
+        Name of the column containing incoming radiation observations. W m-2 preferred.
     vpd_col: str
-        Name of the column containing VPD observations.
+        Name of the column containing VPD observations. kPa preferred.
     night_window_width_days: int, optional
-        Number of days to use for estimating nighttime E0. Default is 14.
+        Number of days to use for estimating nighttime E0. Default is 14. Adjusting this window can help resolve issues where no valid E0 estimates are obtained within a given season, but may increase uncertainty if set too small.
     day_window_width_days: int, optional
         Number of days to use for estimating daytime parameters. Default is 4.
     n_best_E0: int, optional
-        Number of best E0 estimates to consider. Default is 3.
+        Number of best E0 estimates to consider. Default is 3. Decreasing this number will make the estimate more selective, potentially resolving issues where not enough valid E0 estimates are obtained, but increasing uncertainty.
     min_night_datapoints: int, optional
         Minimum number of nighttime data points required for E0 estimation. Default is 6.
     min_night_temp_range: float, optional
@@ -436,7 +433,7 @@ def gpp_day_lasslop_2010(
     daytime_NEE = df.loc[isday, [nee_col, t_col, swin_col, vpd_col]]
     daytime_diag = []
     for idx, window in daytime_NEE.groupby(pd.Grouper(freq=f"{day_window_width_days}D")):
-        E0_window = E0.at[idx]
+        E0_window = E0.asof(idx)
         window = window.dropna()
         if window.shape[0] < min_day_datapoints:
             continue
@@ -449,7 +446,7 @@ def gpp_day_lasslop_2010(
             res = _fit_lasslop_eq4(
                 x_data=window[[swin_col, t_col, vpd_col]].to_numpy(),
                 y_data=window[nee_col].to_numpy(),
-                E0=E0_window.to_numpy()
+                E0=E0_window
             )
         except Exception as e:
             continue
