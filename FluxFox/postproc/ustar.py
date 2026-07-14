@@ -54,7 +54,7 @@ def ustar_papale_2006(
     3. Check the correlation between U* and TA. If |R(U*, TA)| > `ustar_ta_corr_cutoff`, skip the season.
     4. For each temperature class, bin the data by U* into `n_ustar_classes` classes of equal sample size.
     5. Identify the U* threshold: when U* plateaus within a temperature class (detected as U* being greater than `plateau_pct`*mean(USTAR) for all U* greater than in the current bin).
-    6. If the algorithm fails for any particular season, fill in the U* threshold using the `gapfill_quantile` first by season, then by year. If the entire pipeline fails, use `default_ustar_thresh`.
+    6. If the algorithm fails for any particular season, fill in the U* threshold using the `gapfill_quantile` first by the seasonal mean, then by year annual mean if that also fails. If the entire pipeline fails, use `default_ustar_thresh`.
     7. Return a boolean series indicating which data points pass the U* filter and a dataframe of U* thresholds by season and year.
 
     Parameters
@@ -97,27 +97,9 @@ def ustar_papale_2006(
     
     Important
     ---------
-    Storage correction or no storage correction?
-
-    It is recommended to use storage-corrected NEE rather than turbulent CO2 flux alone for this method, but this depends on your goals.
-
-    This method uses the relationship between nighttime NEE and U* to identify periods of insufficient turbulent mixing. 
-    Under stable conditions, weakened turbulence allows CO2 to enter the ecosystem through non-turbulent mechanisms (storage and advection).
-    Additionally, under stable conditions, the underlying assumptions of eddy covariance may be violated (e.g., the Reynolds time average may not converge to the ensemble average quickly enough, leading to high uncertainty in turbulent fluxes).
-    As a result, the turbulent flux alone may underestimate the magnitude of the total ecosystem-atmosphere CO2 exchange.
-    This does not imply that turbulent fluxes measured at low U* are unreliable. 
-    Rather, this implies that turbulent fluxes alone are no longer representative of the total ecosystem-atmosphere exchange under low U* conditions.
-    
-    When using storage-corrected NEE, more of the total ecosystem-atmosphere CO2 exchange is captured, making the relationship between nighttime NEE and U* more physically meaningful.
-    In many cases, providing NEE with a storage correction applied reduces the apparent dependence of nighttime NEE on U*, 
-    which can lead to a lower estimated threshold and less data loss when applying a U* filter.
-
-    However, some measurement systems produce more and less reliable raw gas concentrations, making storage terms more or less defensible.
-    If your measurement system generated poor estimates of raw gas concentrations (e.g., your instrument doesn't get calibrated frequently enough), then applying a storage correction may introduce more uncertainty than it resolves.
-
-    **In summary:** Storage-corrected NEE is preferred for estimating U* thresholds because it provides a more complete representation of nighttime ecosystem-atmosphere CO2 exchange.
+    Storage-corrected NEE is preferred for estimating U* thresholds because it provides a more complete representation of nighttime ecosystem-atmosphere CO2 exchange.
     When using storage-corrected NEE to determine U* thresholds, you should perform all future analyses using storage-corrected fluxes (e.g. FC + SC, H + SC, LE + SLE instead of FC, H, and LE by themselves).
-    However, if you do not have access to high-quality storage flux measurements, then using storage-corrected NEE may introduce more uncertainty than it resolves, and you may need to rely on turbulent fluxes alone for U* threshold estimation.
+    However, if you do not have access to high-quality storage flux measurements (for example, if your gas analyzer is infrequently calibrated), then using storage-corrected NEE may introduce more uncertainty than it resolves, and you may need to rely on turbulent fluxes alone for U* threshold estimation.
     """
     _check_common_args(df, isday)
     if n_seasons <= 0:

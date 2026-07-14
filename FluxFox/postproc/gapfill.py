@@ -311,17 +311,17 @@ def gapfill_xgb_liu_2025(
     )
 
 
-    if verbose:
-        # BayesSearchCV.fit gives internal CV scores on X_hyper_train
-        # we separately evaluate the best best estimator on the held-out
-        # X_hyper_test to confirm the chosen hyperparameters generalize
-        opt.fit(X_hyper_train, y_hyper_train)
-        best_params = dict(opt.best_params_)
+    # BayesSearchCV.fit gives internal CV scores on X_hyper_train
+    # we separately evaluate the best best estimator on the held-out
+    # X_hyper_test to confirm the chosen hyperparameters generalize
+    opt.fit(X_hyper_train, y_hyper_train)
+    best_params = dict(opt.best_params_)
 
-        hyper_test_pred = opt.predict(X_hyper_test)
-        hyper_test_rmse = float(
-            np.sqrt(np.mean((hyper_test_pred - y_hyper_test.values) ** 2))
-        )
+    hyper_test_pred = opt.predict(X_hyper_test)
+    hyper_test_rmse = float(
+        np.sqrt(np.mean((hyper_test_pred - y_hyper_test.values) ** 2))
+    )
+    if verbose:
         print(f"[xgb_gapfill] best hyperparameters: {best_params}")
         print(
             f"[xgb_gapfill] held-out hyper_test RMSE: {hyper_test_rmse:.4f}"

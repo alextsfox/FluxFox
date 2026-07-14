@@ -1,7 +1,7 @@
 # Author: Alex Fox
 # Created: 2024-06-17
 """
-Post-processing functions for eddy flux data.
+Functions for post-processing computed fluxes
 
 Includes modules for
 - U* filtering (`ustar`)
@@ -16,8 +16,8 @@ A typical workflow involves
 1. Despiking
 2. U* filtering
 3. Gap-filling
-4. Partitioning
-5. Plotting 
+4. Partitioning (and optionally additional despiking and gap-filling)
+5. Plotting/export
 """
 
 from .utils import compute_isday, compute_single_point_storage_flux

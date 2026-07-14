@@ -2,13 +2,16 @@
 * pandas
 * numpy
 
+# planar fit
+* statsmodels
+
 # optional
 * tqdm
 
-# ustar filter
+# ustar
 * solarpy
 
-# xgb_gapfill
+# xgb gapfill
 * scikit-optimize
 * scikit-learn
 

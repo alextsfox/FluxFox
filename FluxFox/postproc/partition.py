@@ -90,6 +90,9 @@ def gpp_night_falge_2001(
 
     where $T_{ref}$=10°C and $T_0$=-46.02°C. $E_0$ and $R_{ref}$ are fitted parameters.
 
+    The algorithm uses mean absolute error as the objective function for fitting the parameters $R_{ref}$ and $E_0$ to the nighttime NEE data
+    in order to reduce the influence of outliers on the parameter estimation.
+
 
     Parameters
     ----------
@@ -185,6 +188,9 @@ def gpp_night_reichstein_2005(
         The resulting R_ref estimates are then linearly interpolated.
     
     Reco is then calculated using the Lloyd Taylor model (as a function of temperature) with the estimated E0 and interpolated R_ref for all timepoints (including nighttime ones).
+
+    The algorithm uses mean absolute error as the objective function for fitting the parameters $R_{ref}$ and $E_0$ to the nighttime NEE data
+    in order to reduce the influence of outliers on the parameter estimation.
 
     Parameters
     ----------
@@ -438,6 +444,9 @@ def gpp_day_lasslop_2010(
     2. Using E0 estimated from step 1, estimate k, alpha, beta_0, and R_ref from daytime data in `day_window_width_days`-day windows.
     3. Compute Reco using the Lloyd-Taylor model and the fitted parameters (R_ref and E0).
     4. Compute GPP using the Lasslop model as -(NEE(SW_in, T, VPD) - Reco).
+
+    The algorithm uses mean absolute error as the objective function for fitting the parameters $R_{ref}$ and $E_0$ to the nighttime NEE data
+    in order to reduce the influence of outliers on the parameter estimation.
 
     Parameters
     ----------
