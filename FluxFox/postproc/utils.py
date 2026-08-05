@@ -44,6 +44,8 @@ def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: fl
         powers.append(panel.power())
     powers = pd.DataFrame({"SW_IN_POT": powers, "doy": dates.dayofyear, "h": dates.hour, "m":dates.minute})
 
+    if timestamps.name is None:
+        timestamps = timestamps.rename("TIMESTAMP")
     df = pd.DataFrame({'doy':timestamps.dayofyear, 'h':timestamps.hour, 'm':timestamps.minute})
     df = df.set_index(timestamps)
     df = (

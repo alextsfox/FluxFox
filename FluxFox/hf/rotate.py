@@ -20,6 +20,28 @@ class PlanarFitResult:
     b2: float
     M_pf: np.ndarray
 
+    def __str__(self):
+        out = ""
+        out += "PlanarFitResult(\n"
+        out += f"\tb0: {self.b0:.5f}\n"
+        out += f"\tb1: {self.b1:.5f}\n"
+        out += f"\tb2: {self.b2:.5f}\n"
+        out += f"\tM_pf: "
+        for r in range(self.M_pf.shape[0]):
+            for c in range(self.M_pf.shape[1]):
+                if c == self.M_pf.shape[1] - 1 or self.M_pf[r, c+1] >= 0:
+                    end = "  "
+                else:
+                    end = " "
+                
+                if ~np.isfinite(self.M_pf[r, c]):
+                    out += "nan    " + end
+                    continue
+                out += f"{self.M_pf[r, c]:.4f}" + end
+            out += "\n\t      "
+        out = out[:-7] + ")"
+        return out
+
 class PlanarFitRotation:
     def __init__(self):
         r"""
@@ -120,7 +142,7 @@ class PlanarFitRotation:
                 u_bar_col="u",
                 v_bar_col="v",
                 w_bar_col="w",
-                assume_perfect_w=True
+                assume_unbiased_w=True
             )
             print(pf_res)
 

@@ -10,3 +10,5 @@ Includes modules for
 - Actual flux computation (`compute`)
 - Other utility functions (`utils`)
 """
+
+from .clean import despike_hf
