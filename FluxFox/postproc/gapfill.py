@@ -247,7 +247,7 @@ def gapfill_xgb_liu_2025(
 
     if verbose:
         print(
-            f"[xgb_gapfill] {n_total} rows total | "
+            f"[gapfill_xgb_liu_2025] {n_total} rows total | "
             f"{n_gaps} target gaps to fill | "
             f"{n_usable} rows usable for training | "
             f"{n_dropped} non-gap rows dropped for excess missing predictors"
@@ -289,7 +289,7 @@ def gapfill_xgb_liu_2025(
 
     if verbose:
         print(
-            f"[xgb_gapfill] hyperparameter search: "
+            f"[gapfill_xgb_liu_2025] hyperparameter search: "
             f"{len(X_hyper_train)} train / {len(X_hyper_test)} test rows, "
             f"{n_bayes_iter} Bayes iterations, {cv_folds}-fold CV scoring"
         )
@@ -322,9 +322,9 @@ def gapfill_xgb_liu_2025(
         np.sqrt(np.mean((hyper_test_pred - y_hyper_test.values) ** 2))
     )
     if verbose:
-        print(f"[xgb_gapfill] best hyperparameters: {best_params}")
+        print(f"[gapfill_xgb_liu_2025] best hyperparameters: {best_params}")
         print(
-            f"[xgb_gapfill] held-out hyper_test RMSE: {hyper_test_rmse:.4f}"
+            f"[gapfill_xgb_liu_2025] held-out hyper_test RMSE: {hyper_test_rmse:.4f}"
         )
 
     
@@ -358,7 +358,7 @@ def gapfill_xgb_liu_2025(
 
     if verbose:
         print(
-            f"[xgb_gapfill] final model test scores: "
+            f"[gapfill_xgb_liu_2025] final model test scores: "
             f"RMSE={rmse:.4f}, R2={r2:.4f}, bias={bias:.4f} "
             f"(n_test={len(y_test)})"
         )
@@ -367,7 +367,7 @@ def gapfill_xgb_liu_2025(
     # that gap predictions benefit from the maximum available training
     # data, now that hyperparameters and diagnostics are settled.
     if verbose:
-        print("[xgb_gapfill] refitting final model on all usable rows")
+        print("[gapfill_xgb_liu_2025] refitting final model on all usable rows")
     final_model_full = HistGradientBoostingRegressor(
         random_state=random_state,
         early_stopping=True,
@@ -388,7 +388,7 @@ def gapfill_xgb_liu_2025(
         unpredictable_gap_idx = gap_idx[predictor_nan_count_gaps > n_missing_allowed]
 
         if len(unpredictable_gap_idx) > 0 and verbose:
-            msg = f"[xgb_gapfill] WARNING: {len(unpredictable_gap_idx)} gap rows exceed the n_missing_allowed={n_missing_allowed} predictor NaN tolerance and cannot be filled; they remain NaN."
+            msg = f"[gapfill_xgb_liu_2025] WARNING: {len(unpredictable_gap_idx)} gap rows exceed the n_missing_allowed={n_missing_allowed} predictor NaN tolerance and cannot be filled; they remain NaN."
             warnings.warn(msg)
     
         if len(predictable_gap_idx) > 0:
