@@ -88,8 +88,8 @@ def _mse_loss(params, x, y):
     intercept, slope, x0 = params
     y_pred = _broken_stick(x, intercept, slope, x0)
     return np.mean((y - y_pred)**2)
-def _fit_broken_stick(x, y, p0=(0.0, 15.0, 0.2), n_boot=30, ust_thresh_bounds=(0, 1), loss:Literal["mse", "mae"]="mae") -> tuple[float, float, float]:
-    rng = np.random.default_rng()
+def _fit_broken_stick(x, y, p0=(0.0, 15.0, 0.2), n_restarts=30, ust_thresh_bounds=(0, 1), loss:Literal["mse", "mae"]="mae", random_state=None) -> tuple[float, float, float]:
+    rng = np.random.default_rng(random_state)
     bounds = [
         (None, None),  # intercept: unbounded
         (0.0, None),   # slope: must be positive
@@ -98,7 +98,7 @@ def _fit_broken_stick(x, y, p0=(0.0, 15.0, 0.2), n_boot=30, ust_thresh_bounds=(0
     x0s = []
     intercepts = []
     slopes = []
-    for ust_thresh_init in rng.random(n_boot)*(ust_thresh_bounds[1]-ust_thresh_bounds[0]) + ust_thresh_bounds[0]:
+    for ust_thresh_init in rng.random(n_restarts)*(ust_thresh_bounds[1]-ust_thresh_bounds[0]) + ust_thresh_bounds[0]:
         # idx = rng.choice(len(x), size=size, replace=True)
         x_boot = x
         y_boot = y
@@ -120,13 +120,13 @@ def _fit_broken_stick(x, y, p0=(0.0, 15.0, 0.2), n_boot=30, ust_thresh_bounds=(0
         return np.nan, np.nan, np.nan
     return np.nanmedian(intercepts), np.nanmedian(slopes), np.nanmean(x0s)
 
-def _fit_ta_class(ta_group, ta_col, ustar_col, nee_col, ustar_ta_corr_cutoff, ustar_thresh_bounds, parallel_fits):
+def _fit_ta_class(ta_group, ta_col, ustar_col, nee_col, ustar_ta_corr_cutoff, ustar_thresh_bounds, n_restarts, random_state):
     # 4. correlation check: skip class if |R(TA<USTAR)| is too high
     corr = ta_group[ta_col].corr(ta_group[ustar_col])
     if abs(corr) >= ustar_ta_corr_cutoff:
         # warnings.warn(f"R(U*,TA) = {abs(corr):.2f} > {ustar_ta_corr_cutoff:.2f} for TA class [{ta_group[ta_col].min():.2f}, {ta_group[ta_col].max():.2f}]. Skipping")
         return np.nan
-    _, _, plateau_ustar = _fit_broken_stick(ta_group[ustar_col].values, ta_group[nee_col].values, p0=(0.0, 15.0, max(0.2, ustar_thresh_bounds[1])), n_boot=parallel_fits, ust_thresh_bounds=ustar_thresh_bounds)
+    _, _, plateau_ustar = _fit_broken_stick(ta_group[ustar_col].values, ta_group[nee_col].values, p0=(0.0, 15.0, max(0.2, ustar_thresh_bounds[1])), n_restarts=n_restarts, ust_thresh_bounds=ustar_thresh_bounds, random_state=random_state)
     return plateau_ustar
 
 def ustar_broken_stick(
@@ -141,6 +141,7 @@ def ustar_broken_stick(
     gapfill_quantile: float=0.75,
     default_ustar_thresh: float=0.2,
     pbar:bool=False,
+    random_state=None,
 )->UStarFilterResult:
     r"""
     Creates a U* filter for each season for each year in the dataset, using a broken stick model to find the U* threshold:
@@ -186,6 +187,8 @@ def ustar_broken_stick(
         If the entire pipeline fails, this is the fallback U* threshold value that will be used in the filter. Default 0.2.
     pbar : bool
         Whether to show a progress bar. Requires tqdm. Default False
+    random_state : int|None
+        Random seed for reproducibility. Default None.
     
     Returns
     -------
@@ -311,7 +314,7 @@ def ustar_broken_stick(
             plateau_ustars = []
             for _, ta_group in ssn_group.groupby(ta_bins):
                 plateau_ustars.append(
-                    _fit_ta_class(ta_group, ta_col, ustar_col, nee_col, ustar_ta_corr_cutoff, ustar_thresh_bounds, n_restarts)
+                    _fit_ta_class(ta_group, ta_col, ustar_col, nee_col, ustar_ta_corr_cutoff, ustar_thresh_bounds, n_restarts, random_state)
                 )
             if any(np.isnan(plateau_ustars)):
                 all_ustar_qual[iyr, issn] = 1  # medium quality estimate
