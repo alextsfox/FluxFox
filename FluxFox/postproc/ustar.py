@@ -43,7 +43,7 @@ def _fit_broken_stick(
     y,
     p0=(0.0, 15.0, 0.2),
     n_restarts=30,
-    ustar_thresh_bounds=(0, 1),
+    ustar_thresh_bounds=(0, 5),
     loss: Literal["mse", "mae"] = "mse",
     random_state=None,
 ) -> tuple[float, float, float]:
@@ -69,8 +69,7 @@ def _fit_broken_stick(
         intercept, slope, x0 = result.x
         if (
             not result.success
-            or x0 == ustar_thresh_bounds[0]
-            or x0 == ustar_thresh_bounds[1]
+            or not (ustar_thresh_bounds[0] + 0.01 < x0 < ustar_thresh_bounds[1] - 0.01)
         ):
             intercept = slope = x0 = np.nan
         intercepts.append(intercept)
@@ -78,7 +77,7 @@ def _fit_broken_stick(
         x0s.append(x0)
     if all(np.isnan(x0s)):
         return np.nan, np.nan, np.nan
-    return np.nanmedian(intercepts), np.nanmedian(slopes), np.nanmean(x0s)
+    return np.nanmedian(intercepts), np.nanmedian(slopes), np.nanmedian(x0s)
 
 
 def _fit_ta_class_broken_stick(
@@ -104,7 +103,7 @@ def _fit_ta_class_broken_stick(
     _, _, threshold = _fit_broken_stick(
         ta_group[ustar_col].to_numpy(),
         ta_group[nee_col].to_numpy(),
-        p0=(0.0, 15.0, max(0.2, ustar_thresh_bounds[1])),
+        p0=(0.0, 15.0, 0.2),
         n_restarts=n_restarts,
         ustar_thresh_bounds=ustar_thresh_bounds,
         random_state=random_state,
@@ -252,11 +251,11 @@ def _ustar_filter(
     if dt <= pd.Timedelta(0):
         raise ValueError("df timestamps must have a positive sampling interval.")
     fit_df = full_df
-    if fit_ustar_bounds is not None:
-        lower, upper = fit_ustar_bounds
-        fit_df = full_df.loc[
-            full_df[ustar_col].between(lower * 0.5, upper * 1.5, inclusive="neither")
-        ].copy()
+    # if fit_ustar_bounds is not None:
+    #     lower, upper = fit_ustar_bounds
+    #     fit_df = full_df.loc[
+    #         full_df[ustar_col].between(lower * 0.5, upper * 1.5, inclusive="neither")
+    #     ].copy()
     if len(fit_df) < 2:
         raise ValueError(
             "Fewer than two observations remain after applying the U* fitting range."
@@ -358,14 +357,75 @@ def ustar_broken_stick(
     seasons: int | list[list[int]] = 4,
     n_ta_classes: int = 6,
     ustar_ta_corr_cutoff: float = 0.4,
-    ustar_thresh_bounds: tuple[float, float] = (0, 1),
-    n_restarts: int = 10,
+    ustar_thresh_bounds: tuple[float, float] = (0.1, 1.0),
+    n_restarts: int = 30,
     loss: Literal["mse", "mae"] = "mse",
     gapfill_quantile: float = 0.75,
     default_ustar_thresh: float = 0.2,
     pbar: bool = False,
     random_state=None,
 ) -> UStarFilterResult:
+    r"""
+    Creates a U\* filter for each season for each year in the dataset, using a broken stick model to find the U\* threshold:
+
+    ::math::
+        \widehat{\text{NEE}}_i = \begin{cases}
+            \alpha + \beta U^\star_i & \text{if } U^\star_i < U^\star_\text{thresh} \\
+            \alpha + \beta U^\star_\text{thresh} & \text{if } U^\star_i \geqslant U^\star_\text{thresh}
+        \end{cases}
+
+    In cases where nighttime NEE never fully levels off or is heteroschedastic with increasing U\*, the Papale et al (2005) method can fail to converge on a reasonable solution without very delicate tuning of the parameters.
+    In such cases, the broken stick model may provide a more robust solution.
+
+    However, the basic principle is the same: the U\* threshold is the point at which nighttime NEE stops increasing with increasing U\*, within a given range of temperatures.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input dataframe.
+        Must have:
+            * columns for air temperature, U*, and nee/fc/co2_flux (positive-upwards)
+            * have a `pd.DatetimeIndex`. This index should be a meridian offset time, not a civil time. e.g. Anchorage, AK, USA has the civil time zone of UTC-8 in the Summer and UTC-9 in the Winter, but has a meridian offset time zone of UTC-10 (calculated from its longitude).
+    isday : pd.Series
+        Boolean series indicating daytime (`True`) and nighttime (`False`) for each timestamp in `df.index`. utils.compute_isday can be used to generate this series.
+    ta_col : str
+        The column name for air temperature in `df`. Unit-agnostic.
+    ustar_col : str
+        The column name for ustar in `df`. m s-1 preferred.
+    nee_col : str
+        The column name for NEE (storage-corrected CO2 flux is preferred over turbulent CO2 flux alone) in `df`. Unit-agnostic.
+    seasons : int|list[int]
+        The number of seasons in the year. Default 4. Increase this value if you want finer seasonal resolution for U* threshold estimation. Decrease this value if the algorithm has trouble converging on a solution.
+    n_ta_classes : int
+        The number of air temperature classes. Default 6. Increase this value to limit the impact of temperature variation on the final U* threshold. Decrease this value if the algorithm has trouble converging on a solution.
+    ustar_ta_corr_cutoff : float
+        The maximum acceptable correlation between U* and TA. Seasons where |R(U*, TA)| > `ustar_ta_corr_cutoff` will be skipped to avoid confounding the U* ~ NEE relationship. Default 0.4. Increase this value to allow more correlation between U* and TA before skipping a season. Decrease this value to be more strict about the correlation threshold, however, it is recommended to also increase `n_ta_classes` to reduce the impact of temperature variation when the correlation threshold is looser.
+    ustar_thresh_bounds : tuple[float, float]
+        Bounds for the U* threshold when fitting the broken stick model. Default (0.1, 1.0). This is a good starting point. 
+        Decreasing the lower bound is not recommended unless your site has extremely low turbulence (ie. in a dense understory), as it can cause the model to become stuck in a local minimum.
+        Increasing the upper bound should never be required, as U* thresholds above 1 m/s are extremely rare in the literature.
+    n_restarts : int
+        Number of restarts of the broken stick model to perform with randomized initial parameters. Higher values (>10) are more robust, but slower. Default 30.
+    loss : str
+        Loss function to use when fitting the broken stick model. Options are "mse" (default) or "mae". Prefer MSE unless your data has extreme outliers, in which case MAE may be more robust, or further data cleaning may be necessary.
+    gapfill_quantile : float
+        If the algorithm fails for a given season/year, U* thresholds are filled in with this quantile first by season, then by year. For example, if in 2012, the ustar thresholds for Winter, Spring, Summer, and Fall were 0.19, nan, 0.21, 0.3, and `gapfill_quantile`=0.75, the nan would be filled with the 0.75 quantile of [0.19, 0.21, 0.3]. Default 0.75.
+    default_ustar_thresh : float
+        If the entire pipeline fails, this is the fallback U* threshold value that will be used in the filter. Default 0.2.
+    pbar : bool
+        Whether to show a progress bar. Requires tqdm. Default False
+    random_state : int|None
+        Random seed for reproducibility. Default None.
+    
+    Returns
+    -------
+    UStarFilterResult
+        A dataclass containing:
+            * `flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
+            * `thresholds`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
+            * `qual`: pd.DataFrame for each year/season in ustar_thresh_df indicating the quality of the U* threshold estimation (0=best, 1=acceptable, 2=poor)
+    """
+
     if ustar_thresh_bounds[0] < 0 or ustar_thresh_bounds[1] <= ustar_thresh_bounds[0]:
         raise ValueError(f"ustar_thresh_bounds must be increasing and non-negative, got {ustar_thresh_bounds}.")
     if not isinstance(n_restarts, (int, np.integer)) or isinstance(n_restarts, bool):
@@ -408,6 +468,62 @@ def ustar_papale_2006(
     default_ustar_thresh: float = 0.2,
     pbar: bool = False,
 ) -> UStarFilterResult:
+    """
+    Creates a U* filter for each season for each year in the dataset, following Papale et al (2006), Biogeosciences.
+
+    General description of method:
+    1. Select nighttime data based on a theoretical insolation threshold (`nighttime_swin`).
+    2. For each year, for each season, bin the data by air temperature into `n_ta_classes` classes of equal sample size.
+    3. Check the correlation between U* and TA. If |R(U*, TA)| > `ustar_ta_corr_cutoff`, skip the season.
+    4. For each temperature class, bin the data by U* into `n_ustar_classes` classes of equal sample size.
+    5. Identify the U* threshold: when U* plateaus within a temperature class (detected as U* being greater than `plateau_pct`*mean(USTAR) for all U* greater than in the current bin).
+    6. If the algorithm fails for any particular season, fill in the U* threshold using the `gapfill_quantile` first by the seasonal mean, then by year annual mean if that also fails. If the entire pipeline fails, use `default_ustar_thresh`.
+    7. Return a boolean series indicating which data points pass the U* filter and a dataframe of U* thresholds by season and year.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The input dataframe.
+        Must have:
+            * columns for air temperature, U*, and nee/fc/co2_flux (positive-upwards)
+            * have a `pd.DatetimeIndex`. This index should be a meridian offset time, not a civil time. e.g. Anchorage, AK, USA has the civil time zone of UTC-8 in the Summer and UTC-9 in the Winter, but has a meridian offset time zone of UTC-10 (calculated from its longitude).
+    isday : pd.Series
+        Boolean series indicating daytime (`True`) and nighttime (`False`) for each timestamp in `df.index`. utils.compute_isday can be used to generate this series.
+    ta_col : str
+        The column name for air temperature in `df`. Unit-agnostic.
+    ustar_col : str
+        The column name for ustar in `df`. m s-1 preferred.
+    nee_col : str
+        The column name for NEE (storage-corrected CO2 flux is preferred over turbulent CO2 flux alone) in `df`. Unit-agnostic.
+    n_seasons : int
+        The number of seasons in the year. Default 4. Increase this value if you want finer seasonal resolution for U* threshold estimation. Decrease this value if the algorithm has trouble converging on a solution.
+    n_ta_classes : int
+        The number of air temperature classes. Default 6. Increase this value to limit the impact of temperature variation on the final U* threshold. Decrease this value if the algorithm has trouble converging on a solution.
+    n_ustar_classes : int
+        The number of U* classes. Default 20. Increase this value for more precise determination of the U* threshold. Decrease this value if the algorithm has trouble converging on a solution.
+    ustar_ta_corr_cutoff : float
+        The maximum acceptable correlation between U* and TA. Seasons where |R(U*, TA)| > `ustar_ta_corr_cutoff` will be skipped to avoid confounding the U* ~ NEE relationship. Default 0.4. Increase this value to allow more correlation between U* and TA before skipping a season. Decrease this value to be more strict about the correlation threshold, however, it is recommended to also increase `n_ta_classes` to reduce the impact of temperature variation when the correlation threshold is looser.
+    plateau_pct : float
+        Criterion used to identify a plateau in the U* ~ NEE relationship. After binning seasonal data by TA, the data is binned by U*. If U* for a given bin is greater than `plateau_pct`*mean(USTAR) for all USTAR greater than in the current bin, then a plateau has been reached. Default 0.95.
+    gapfill_quantile : float
+        If the algorithm fails for a given season/year, U* thresholds are filled in with this quantile first by season, then by year. For example, if in 2012, the ustar thresholds for Winter, Spring, Summer, and Fall were 0.19, nan, 0.21, 0.3, and `gapfill_quantile`=0.75, the nan would be filled with the 0.75 quantile of [0.19, 0.21, 0.3]. Default 0.75.
+    default_ustar_thresh : float
+        If the entire pipeline fails, this is the fallback U* threshold value that will be used in the filter. Default 0.2.
+
+    Returns
+    -------
+    UStarFilterResult
+        A dataclass containing:
+            * `flag`: pd.Series of type `bool`, indexed by `df.index`. `False` indicates that the datapoint should be filtered out.
+            * `thresholds`: pd.DataFrame with columns representing seasons and rows representing years. Values indicate the U* threshold for that season and year.
+            * `qual`: pd.DataFrame for each year/season in ustar_thresh_df indicating the quality of the U* threshold estimation (0=best, 1=acceptable, 2=poor)
+    
+    Important
+    ---------
+    Storage-corrected NEE is preferred for estimating U* thresholds because it provides a more complete representation of nighttime ecosystem-atmosphere CO2 exchange.
+    When using storage-corrected NEE to determine U* thresholds, you should perform all future analyses using storage-corrected fluxes (e.g. FC + SC, H + SC, LE + SLE instead of FC, H, and LE by themselves).
+    However, if you do not have access to high-quality storage flux measurements (for example, if your gas analyzer is infrequently calibrated), then using storage-corrected NEE may introduce more uncertainty than it resolves, and you may need to rely on turbulent fluxes alone for U* threshold estimation.
+    """
     if n_ustar_classes < 2:
         raise ValueError(f"n_ustar_classes must be >= 2, got {n_ustar_classes}.")
     if not 0 <= plateau_pct <= 1:
