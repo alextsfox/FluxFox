@@ -2,9 +2,14 @@
 Functions for compensating time lags in high frequency data.
 """
 
+import warnings
+
 from scipy import signal
 import pandas as pd
 import numpy as np
+
+from collections.abc import Callable
+from dataclasses import dataclass
 
 def timelag_nominal(obs: pd.Series, n_wind: float, e_wind: float, z_wind: float, n_sep: float, e_sep: float, z_sep: float, acq_freq: float, use_vertical : bool = False, min_ws : float = 0.1) -> tuple[pd.Series, int]:
     """
@@ -110,7 +115,23 @@ def timelag_covmax(obs: pd.Series, ref: pd.Series, default_lag: int = 0, max_lag
     obs_shifted = obs.shift(-lag)
     return obs_shifted, lag
 
-def timelag_auto_opt_fratini():
+@dataclass
+class TimelagAutoOptFratiniResult:
+    """
+    Result of the automatic timelag optimization based on the Fratini method.
+
+    Attributes
+    ----------
+    tau : pd.DataFrame
+        A DataFrame containing the optimized time lag series and related information, including the median timelag, the plausibility window (tau_min and tau_max), and the optimized timelag (tau_opt).
+    tau_h2o : pd.DataFrame | None
+        A DataFrame containing the optimized time lag series and related information for water vapor, if relative humidity data was provided. If no relative humidity data was provided, this attribute will be None.
+        Contains the same columns as tau, but with an additional column for the relative humidity bin (rh_bin) used for binning the data.
+    """
+    tau: pd.DataFrame
+    tau_h2o: pd.DataFrame | None = None
+
+class TimelagAutoOptFratini:
     """
     Placeholder for future implementation of the eddypro automatic timelag optimization method, likely attributable to Fratini.
 
@@ -126,8 +147,125 @@ def timelag_auto_opt_fratini():
     the data is split into humidity bins (by quantile? by absolute value?) and the timelag is computed for each bin separately. The plausibility window is then computed for each bin separately, and the timelag is applied to the data in each bin separately.
 
     Follow the design pattern of RotatePlanarFit.
-
-    TODO: implement
     """
 
-__all__ = ["timelag_covmax", "timelag_nominal"]
+    def __init__(self):
+        self.result = None
+
+    def compute(
+        self,
+        lag_series: pd.Series,
+        rh_series: pd.Series = None,
+        z: float = 1.5,
+        n_rh_classes: int = 6,
+        window_size: pd.Timedelta = None,
+        min_periods: int = 500
+    )->TimelagAutoOptFratiniResult:
+        """
+        Compute the automatic timelag optimization based on the Fratini method.
+
+        Parameters
+        ----------
+        lag_series : pd.Series
+            A time series of initial time lag estimates (e.g., from covmax) with a datetime index. Negative values indicate that the observed series leads the reference series, while positive values indicate that the observed series lags behind the reference series. Units are in number of samples (not time units).
+        rh_series : pd.Series
+            A time series of relative humidity values with a datetime index, used for binning the data. If None, no binning will be applied.
+            In principle, this could be any other variable that is expected to affect the time lag, such as temperature or pressure, but relative humidity is the most common use case, especially for closed path systems.
+        z : float, optional
+            The z-score for determining the plausibility window. Default is 1.5.
+        n_rh_classes : int, optional
+            The number of relative humidity classes to use for binning the data. Default is 6.
+        window_size : pd.Timedelta, optional
+            The size of the moving window for computing the median timelag and plausibility window. If None, a default window size will be used (e.g., 1 month).
+        min_periods : int, optional
+            The minimum number of observations in the window required to compute the median timelag. Default is 500
+
+        Returns
+        -------
+        TimelagAutoOptFratiniResult
+            An object containing the optimized time lag series and related information.
+        """
+
+        if not isinstance(lag_series, pd.Series):
+            raise TypeError("lag_series must be a pandas Series.")
+        if not isinstance(lag_series.index, pd.DatetimeIndex):
+            raise TypeError("lag_series must have a DatetimeIndex.")
+        if not isinstance(window_size, (pd.Timedelta, str)) and window_size is not None:
+            if isinstance(window_size, str):
+                try:
+                    window_size = pd.to_timedelta(window_size)
+                except ValueError:
+                    raise TypeError("window_size string could not be converted to a pandas Timedelta.")
+            raise TypeError("window_size must be a pandas Timedelta, a string, or None.")
+        if window_size.total_seconds() <= 1800:
+            raise ValueError("window_size must be greater than 30 minutes.")
+        if window_size.total_seconds() <= 30*24*3600:
+            warnings.warn(f"window_size is less than 30 days. This may not be sufficient for robust timelag optimization. Got {window_size}.", UserWarning)
+        if z <= 0:
+            raise ValueError(f"z must be a positive number. Got {z}.")
+
+        def mad(x: pd.Series) -> float:
+            """Compute the median absolute deviation of a pandas Series."""
+            return np.nanmedian(np.abs(x - np.nanmedian(x)))
+
+        tau_med = lag_series.rolling(window=window_size, min_periods=min_periods, center=True).median().bfill().ffill()
+        mad = lag_series.rolling(window=window_size, min_periods=min_periods, center=True).apply(mad).bfill().ffill()
+        tau_min = tau_med - z * mad / 0.6745
+        tau_max = tau_med + z * mad / 0.6745
+        tau = lag_series.where(lag_series.between(tau_min, tau_max), tau_med, name="tau_opt")
+        tau = pd.DataFrame({'tau': tau, 'tau_min': tau_min, 'tau_max': tau_max, 'tau_med': tau_med})
+
+        if rh_series is not None:
+            if not isinstance(rh_series, pd.Series):
+                raise TypeError("rh_series must be a pandas Series.")
+            if not isinstance(rh_series.index, pd.DatetimeIndex):
+                raise TypeError("rh_series must have a DatetimeIndex.")
+            if not lag_series.index.equals(rh_series.index):
+                raise ValueError("lag_series and rh_series must have the same index.")
+
+            rh_binlabels, rh_bins = pd.qcut(rh_series, q=n_rh_classes, labels=False, duplicates='drop', retbins=True)
+            tau_h2o = pd.DataFrame({'tau': tau, 'rh_bin': rh_binlabels})
+            tau_h2o['tau_med'] = tau_h2o.groupby('rh_bin')['tau'].transform(lambda x: x.rolling(window=window_size, min_periods=min_periods, center=True).median().bfill().ffill())
+            tau_h2o['mad'] = tau_h2o.groupby('rh_bin')['tau'].transform(lambda x: x.rolling(window=window_size, min_periods=min_periods, center=True).apply(mad).bfill().ffill())
+            tau_h2o['tau_min'] = tau_h2o['tau_med'] - z * tau_h2o['mad'] / 0.6745
+            tau_h2o['tau_max'] = tau_h2o['tau_med'] + z * tau_h2o['mad'] / 0.6745
+            tau_h2o["tau_opt"] = tau_h2o["tau"].where(tau_h2o["tau"].between(
+                tau_h2o["tau_min"], tau_h2o["tau_max"]), tau_h2o["tau_med"]
+            )
+            tau_h2o["rh_bin"] = tau_h2o["rh_bin"].astype("category")
+        else:
+            tau_h2o = None
+        
+        self.result = TimelagAutoOptFratiniResult(tau, tau_h2o)
+
+        return self.result
+
+    def apply(self, obs: pd.Series) -> pd.Series:
+        """
+        Apply the optimized timelag to the observed time series.
+
+        Parameters
+        ----------
+        obs : pd.Series
+            The observed time series to which the optimized timelag will be applied.
+
+        Returns
+        -------
+        pd.Series
+            The observed time series shifted by the optimized timelag.
+        """
+        if self.result is None:
+            raise ValueError("No result available. Please run compute() first.")
+        
+        tau = self.result.tau["tau_opt"]
+        obs_shifted = obs.shift(-tau)
+        return obs_shifted
+
+    
+
+
+
+
+
+
+__all__ = ["timelag_covmax", "timelag_nominal", "TimelagAutoOptFratini", "TimelagAutoOptFratiniResult"]

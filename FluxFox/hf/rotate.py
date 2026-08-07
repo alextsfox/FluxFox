@@ -235,7 +235,6 @@ class RotatePlanarFit:
     """
     def __init__(self):
         self._rotation: Callable | None = None
-        pd.DataFrame.resample
     
     def compute(
         self, 
@@ -246,7 +245,7 @@ class RotatePlanarFit:
         max_w: float = 10,
         min_speed: float = 0,
         assume_unbiased_w: bool = False
-        ) -> None:
+        ) -> PlanarFitResult:
         r"""
         Compute the rotation matrix from the mean velocities.
 
