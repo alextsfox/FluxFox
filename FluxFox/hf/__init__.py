@@ -11,4 +11,5 @@ Includes modules for
 - Other utility functions (`utils`)
 """
 
-from .clean import despike_hf
+from .clean import despike_mds
+from .rotate import RotatePlanarFit, RotateDouble, PlanarFitResult

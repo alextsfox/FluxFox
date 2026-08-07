@@ -42,198 +42,198 @@ class PlanarFitResult:
         out = out[:-7] + ")"
         return out
 
-class PlanarFitRotation:
+class RotatePlanarFit:
+    r"""
+    Class for performing planar fit rotation on 3D velocity data.
+    
+    1. First, a multilinear regression is performed between the mean components of the measured wind velocity to obtain :math:`b_0`, :math:`b_1`, and :math:`b_2`, such that
+    
+    .. math::
+        |\vec{U}_z| \sim b_0 + b_1*|\vec{U}_x| + b_2*|\vec{U}_y|
+    
+    2. The coefficients :math:`b_1` and :math:`b_2` are then used to compute the rotation angles :math:`\alpha` and :math:`\beta` for the planar fit rotation.
+    .. math::
+        \sin\alpha = -\frac{b_1}{\sqrt{b_1^2 + b_2^2 + 1}}
+    
+    .. math::
+        \cos\alpha = \frac{\sqrt{b_2^2 + 1}}{\sqrt{b_1^2 + b_2^2 + 1}}
+    
+    .. math::
+        \sin\beta = \frac{b_2}{\sqrt{b_2^2 + 1}}
+    
+    .. math::
+        \cos\beta = \frac{1}{\sqrt{b_2^2 + 1}}
+
+    .. math::
+        M_pf = 
+            \begin{pmatrix}
+                \cos\alpha & 0 & -\sin\alpha\\
+                0&1&0\\
+                \sin\alpha&0&\cos\alpha
+            \end{pmatrix}
+            \begin{pmatrix}
+                1&0&0\\
+                0&\cos\beta&\sin\beta\\
+                0&\sin\beta&\cos\beta
+            \end{pmatrix}
+
+    3. The resulting rotation matrix :math:`M_{pf}` is then applied to the high-frequency velocity data to align the mean wind vector with the horizontal plane.
+    
+    .. math::
+        \vec{U}^{\prime} = M_{pf} \vec{U}
+
+    4. A final rotation aligns the mean wind vector with the x-axis, ensuring that the mean wind direction is along the streamwise direction.
+    
+    .. math::
+        \vec{U}^{\prime\prime} = 
+            \begin{pmatrix}
+                \cos\theta & \sin\theta & 0\\
+                -\sin\theta & \cos\theta & 0\\
+                0 & 0 & 1
+            \end{pmatrix}
+            \vec{U}^{\prime}
+    
+    where :math:`\theta=\arctan2(|\vec{U}^{\prime}_y|, |\vec{U}^{\prime}_x|)` is the mean wind direction.
+
+    See Wilczak et al. (2001) for details.
+
+    Steps 1 and 2 are performed by the `compute` method of this class, which calculates the rotation matrix based on the mean velocities.
+
+    Steps 3 and 4 are performed by the `rotate` method of this class, which applies the previously computed rotation matrix to the high-frequency velocity data, and can only be called once the `compute` method has been called to calculate the rotation matrix.
+
+    Usage
+    -----
+    First, create an instance of the `PlanarFitRotation` class and call the `compute` method with the mean velocity data over the desired time period (at least 2 weeks, ideally more) to calculate the rotation matrix. Then, use the `rotate` method to apply the rotation to the high-frequency velocity data.
+
+    Examples
+    --------
+    .. code-block:: python
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        from FluxFox.hf.rotate import PlanarFitRotation
+
+        
+        rng = np.random.default_rng(8472)
+        # simulating a planar fit on 2 weeks of 0.1Hz data with a 30 minute averaging period
+        raw_dfs = []
+        for _ in range(48*14):
+            u = rng.normal(1, 0.5, 180)
+            v = rng.normal(0.5, 0.2, 180)
+            w = rng.normal(u*0.03 + v*0.06, 0.05, 180)
+            raw_dfs.append(pd.DataFrame({
+                "u": u,
+                "v": v,
+                "w": w
+            }))
+
+        # compute the mean wind components
+        mean_df = pd.DataFrame({
+            "u": [df["u"].mean() for df in raw_dfs],
+            "v": [df["v"].mean() for df in raw_dfs],
+            "w": [df["w"].mean() for df in raw_dfs]
+        })
+
+        # compute planar fit matrix
+        pf = PlanarFitRotation()
+        pf_res = pf.compute(
+            mean_df=mean_df,
+            u_bar_col="u",
+            v_bar_col="v",
+            w_bar_col="w",
+            assume_unbiased_w=True
+        )
+        print(pf_res)
+
+        # apply the rotation to the high-frequency data
+        rot_dfs = []
+        for df in raw_dfs:
+            rot_dfs.append(pf.rotate(df, "u", "v", "w"))
+
+        # proper way:
+        rot_mean_df = pd.DataFrame({
+            "u": [df["u"].mean() for df in rot_dfs],
+            "v": [df["v"].mean() for df in rot_dfs],
+            "w": [df["w"].mean() for df in rot_dfs]
+        })
+        
+        # visualize the rotated data
+        fig = plt.figure(figsize=(14, 7))
+
+        fig.add_subplot(231)
+        plt.scatter(mean_df["u"], mean_df["w"], s=4, alpha=0.5, label="Unrotated")
+        plt.scatter(rot_mean_df["u"], rot_mean_df["w"], s=4, alpha=0.5, label="Rotated")
+        plt.axline([mean_df["u"].mean(), mean_df["w"].mean()], slope=pf_res.b1)
+        plt.title("Mean Wind Component\nScatterplots")
+        plt.xlabel("Mean Ux")
+        plt.ylabel("Mean Uz")
+        plt.grid(True)
+
+        fig.add_subplot(234)
+        plt.scatter(mean_df["v"], mean_df["w"], s=4, alpha=0.5)
+        plt.scatter(rot_mean_df["v"], rot_mean_df["w"], s=4, alpha=0.5)
+        plt.axline([mean_df["v"].mean(), mean_df["w"].mean()], slope=pf_res.b2)
+        plt.xlabel("Mean Uv")
+        plt.ylabel("Mean Uz")
+        plt.grid(True)
+
+        fig.add_subplot(332)
+        plt.plot(raw_dfs[5]["u"], 'o', markersize=1, label="Unrotated")
+        plt.plot(rot_dfs[5]["u"], 'o', markersize=1, label="Rotated")
+        plt.axhline(raw_dfs[5]["u"].mean(), color="C0", ls="--")
+        plt.axhline(rot_dfs[5]["u"].mean(), color="C1", ls="--")
+        plt.ylabel("Ux")
+        plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
+        plt.title("Example High Frequency\nTimeseries for\naveraging window #5")
+        plt.legend()
+        
+        fig.add_subplot(335)
+        plt.plot(raw_dfs[5]["v"], 'o', markersize=1, )
+        plt.plot(rot_dfs[5]["v"], 'o', markersize=1, )
+        plt.axhline(raw_dfs[5]["v"].mean(), color="C0", ls="--")
+        plt.axhline(rot_dfs[5]["v"].mean(), color="C1", ls="--")
+        plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
+        plt.ylabel("Uy")
+        
+        fig.add_subplot(338)
+        plt.plot(raw_dfs[5]["w"], 'o', markersize=1, )
+        plt.plot(rot_dfs[5]["w"], 'o', markersize=1, )
+        plt.axhline(raw_dfs[5]["w"].mean(), color="C0", ls="--")
+        plt.axhline(rot_dfs[5]["w"].mean(), color="C1", ls="--")
+        plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
+        plt.xlabel("Seconds")
+        plt.ylabel("Uz")
+        
+        fig.add_subplot(333)
+        plt.plot(mean_df["u"], 'o', markersize=1, label="Unrotated")
+        plt.plot(rot_mean_df["u"], 'o', markersize=1, label="Rotated")
+        plt.axhline(mean_df["u"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
+        plt.axhline(rot_mean_df["u"].mean(), color="C1", ls="--", label="Rotated Global Mean")
+        plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
+        plt.ylabel("Mean Ux")
+        plt.title("Mean Wind Velocities")
+        
+        fig.add_subplot(336)
+        plt.plot(mean_df["v"], 'o', markersize=1, label="Unrotated")
+        plt.plot(rot_mean_df["v"], 'o', markersize=1, label="Rotated")
+        plt.axhline(mean_df["v"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
+        plt.axhline(rot_mean_df["v"].mean(), color="C1", ls="--", label="Rotated Global Mean")
+        plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
+        plt.ylabel("Mean Uy")
+        
+        fig.add_subplot(339)
+        plt.plot(mean_df["w"], 'o', markersize=1, label="Unrotated")
+        plt.plot(rot_mean_df["w"], 'o', markersize=1, label="Rotated")
+        plt.axhline(mean_df["w"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
+        plt.axhline(rot_mean_df["w"].mean(), color="C1", ls="--", label="Rotated Global Mean")
+        plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
+        plt.xlabel("Hours")
+        plt.ylabel("Mean Uz")
+
+        fig.tight_layout(h_pad=1.5, w_pad=50)
+        plt.show()
+    """
     def __init__(self):
-        r"""
-        Class for performing planar fit rotation on 3D velocity data.
-        
-        1. First, a multilinear regression is performed between the mean components of the measured wind velocity to obtain :math:`b_0`, :math:`b_1`, and :math:`b_2`, such that
-        
-        .. math::
-            |\vec{U}_z| \sim b_0 + b_1*|\vec{U}_x| + b_2*|\vec{U}_y|
-        
-        2. The coefficients :math:`b_1` and :math:`b_2` are then used to compute the rotation angles :math:`\alpha` and :math:`\beta` for the planar fit rotation.
-        .. math::
-            \sin\alpha = -\frac{b_1}{\sqrt{b_1^2 + b_2^2 + 1}}
-        
-        .. math::
-            \cos\alpha = \frac{\sqrt{b_2^2 + 1}}{\sqrt{b_1^2 + b_2^2 + 1}}
-        
-        .. math::
-            \sin\beta = \frac{b_2}{\sqrt{b_2^2 + 1}}
-        
-        .. math::
-            \cos\beta = \frac{1}{\sqrt{b_2^2 + 1}}
-
-        .. math::
-            M_pf = 
-                \begin{pmatrix}
-                    \cos\alpha & 0 & -\sin\alpha\\
-                    0&1&0\\
-                    \sin\alpha&0&\cos\alpha
-                \end{pmatrix}
-                \begin{pmatrix}
-                    1&0&0\\
-                    0&\cos\beta&\sin\beta\\
-                    0&\sin\beta&\cos\beta
-                \end{pmatrix}
-
-        3. The resulting rotation matrix :math:`M_{pf}` is then applied to the high-frequency velocity data to align the mean wind vector with the horizontal plane.
-        
-        .. math::
-            \vec{U}^{\prime} = M_{pf} \vec{U}
-
-        4. A final rotation aligns the mean wind vector with the x-axis, ensuring that the mean wind direction is along the streamwise direction.
-        
-        .. math::
-            \vec{U}^{\prime\prime} = 
-                \begin{pmatrix}
-                    \cos\theta & \sin\theta & 0\\
-                    -\sin\theta & \cos\theta & 0\\
-                    0 & 0 & 1
-                \end{pmatrix}
-                \vec{U}^{\prime}
-        
-        where :math:`\theta=\arctan2(|\vec{U}^{\prime}_y|, |\vec{U}^{\prime}_x|)` is the mean wind direction.
-
-        See Wilczak et al. (2001) for details.
-
-        Steps 1 and 2 are performed by the `compute` method of this class, which calculates the rotation matrix based on the mean velocities.
-
-        Steps 3 and 4 are performed by the `rotate` method of this class, which applies the previously computed rotation matrix to the high-frequency velocity data, and can only be called once the `compute` method has been called to calculate the rotation matrix.
-
-        Usage
-        -----
-        First, create an instance of the `PlanarFitRotation` class and call the `compute` method with the mean velocity data over the desired time period (at least 2 weeks, ideally more) to calculate the rotation matrix. Then, use the `rotate` method to apply the rotation to the high-frequency velocity data.
-
-        Examples
-        --------
-        .. code-block:: python
-            import numpy as np
-            import matplotlib.pyplot as plt
-            import pandas as pd
-            from FluxFox.hf.rotate import PlanarFitRotation
-
-            
-            rng = np.random.default_rng(8472)
-            # simulating a planar fit on 2 weeks of 0.1Hz data with a 30 minute averaging period
-            raw_dfs = []
-            for _ in range(48*14):
-                u = rng.normal(1, 0.5, 180)
-                v = rng.normal(0.5, 0.2, 180)
-                w = rng.normal(u*0.03 + v*0.06, 0.05, 180)
-                raw_dfs.append(pd.DataFrame({
-                    "u": u,
-                    "v": v,
-                    "w": w
-                }))
-
-            # compute the mean wind components
-            mean_df = pd.DataFrame({
-                "u": [df["u"].mean() for df in raw_dfs],
-                "v": [df["v"].mean() for df in raw_dfs],
-                "w": [df["w"].mean() for df in raw_dfs]
-            })
-
-            # compute planar fit matrix
-            pf = PlanarFitRotation()
-            pf_res = pf.compute(
-                mean_df=mean_df,
-                u_bar_col="u",
-                v_bar_col="v",
-                w_bar_col="w",
-                assume_unbiased_w=True
-            )
-            print(pf_res)
-
-            # apply the rotation to the high-frequency data
-            rot_dfs = []
-            for df in raw_dfs:
-                rot_dfs.append(pf.rotate(df, "u", "v", "w"))
-
-            # proper way:
-            rot_mean_df = pd.DataFrame({
-                "u": [df["u"].mean() for df in rot_dfs],
-                "v": [df["v"].mean() for df in rot_dfs],
-                "w": [df["w"].mean() for df in rot_dfs]
-            })
-            
-            # visualize the rotated data
-            fig = plt.figure(figsize=(14, 7))
-
-            fig.add_subplot(231)
-            plt.scatter(mean_df["u"], mean_df["w"], s=4, alpha=0.5, label="Unrotated")
-            plt.scatter(rot_mean_df["u"], rot_mean_df["w"], s=4, alpha=0.5, label="Rotated")
-            plt.axline([mean_df["u"].mean(), mean_df["w"].mean()], slope=pf_res.b1)
-            plt.title("Mean Wind Component\nScatterplots")
-            plt.xlabel("Mean Ux")
-            plt.ylabel("Mean Uz")
-            plt.grid(True)
-
-            fig.add_subplot(234)
-            plt.scatter(mean_df["v"], mean_df["w"], s=4, alpha=0.5)
-            plt.scatter(rot_mean_df["v"], rot_mean_df["w"], s=4, alpha=0.5)
-            plt.axline([mean_df["v"].mean(), mean_df["w"].mean()], slope=pf_res.b2)
-            plt.xlabel("Mean Uv")
-            plt.ylabel("Mean Uz")
-            plt.grid(True)
-
-            fig.add_subplot(332)
-            plt.plot(raw_dfs[5]["u"], 'o', markersize=1, label="Unrotated")
-            plt.plot(rot_dfs[5]["u"], 'o', markersize=1, label="Rotated")
-            plt.axhline(raw_dfs[5]["u"].mean(), color="C0", ls="--")
-            plt.axhline(rot_dfs[5]["u"].mean(), color="C1", ls="--")
-            plt.ylabel("Ux")
-            plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
-            plt.title("Example High Frequency\nTimeseries for\naveraging window #5")
-            plt.legend()
-            
-            fig.add_subplot(335)
-            plt.plot(raw_dfs[5]["v"], 'o', markersize=1, )
-            plt.plot(rot_dfs[5]["v"], 'o', markersize=1, )
-            plt.axhline(raw_dfs[5]["v"].mean(), color="C0", ls="--")
-            plt.axhline(rot_dfs[5]["v"].mean(), color="C1", ls="--")
-            plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
-            plt.ylabel("Uy")
-            
-            fig.add_subplot(338)
-            plt.plot(raw_dfs[5]["w"], 'o', markersize=1, )
-            plt.plot(rot_dfs[5]["w"], 'o', markersize=1, )
-            plt.axhline(raw_dfs[5]["w"].mean(), color="C0", ls="--")
-            plt.axhline(rot_dfs[5]["w"].mean(), color="C1", ls="--")
-            plt.xticks(np.arange(raw_dfs[5].shape[0], step=30), np.arange(0, 1800, step=300))
-            plt.xlabel("Seconds")
-            plt.ylabel("Uz")
-            
-            fig.add_subplot(333)
-            plt.plot(mean_df["u"], 'o', markersize=1, label="Unrotated")
-            plt.plot(rot_mean_df["u"], 'o', markersize=1, label="Rotated")
-            plt.axhline(mean_df["u"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
-            plt.axhline(rot_mean_df["u"].mean(), color="C1", ls="--", label="Rotated Global Mean")
-            plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
-            plt.ylabel("Mean Ux")
-            plt.title("Mean Wind Velocities")
-            
-            fig.add_subplot(336)
-            plt.plot(mean_df["v"], 'o', markersize=1, label="Unrotated")
-            plt.plot(rot_mean_df["v"], 'o', markersize=1, label="Rotated")
-            plt.axhline(mean_df["v"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
-            plt.axhline(rot_mean_df["v"].mean(), color="C1", ls="--", label="Rotated Global Mean")
-            plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
-            plt.ylabel("Mean Uy")
-            
-            fig.add_subplot(339)
-            plt.plot(mean_df["w"], 'o', markersize=1, label="Unrotated")
-            plt.plot(rot_mean_df["w"], 'o', markersize=1, label="Rotated")
-            plt.axhline(mean_df["w"].mean(), color="C0", ls="--", label="Unrotated Global Mean")
-            plt.axhline(rot_mean_df["w"].mean(), color="C1", ls="--", label="Rotated Global Mean")
-            plt.xticks(np.arange(mean_df.shape[0], step=96), np.arange(0, 48*14/2, step=48).astype(int))
-            plt.xlabel("Hours")
-            plt.ylabel("Mean Uz")
-
-            fig.tight_layout(h_pad=1.5, w_pad=50)
-            plt.show()
-        """
         self._rotation: Callable | None = None
         pd.DataFrame.resample
     
@@ -378,80 +378,79 @@ class PlanarFitRotation:
 
         return out_df
 
-class DoubleRotation:
+class RotateDouble:
+    r"""
+    This class provides an interface for performing a double rotation on high-frequency wind data.
+    The first rotation aligns the mean horizontal wind direction with the x-axis, and the second rotation aligns the mean vertical wind component with the z-axis.
+
+    Steps:
+    1. Compute the mean horizontal wind direction and rotate the data so that this direction aligns with the x-axis:
+    
+    .. math::
+        \theta = \arctan2(|\vec{U}|_y, |\vec{U}|_x)
+    
+    .. math::
+        R_\theta = \begin{pmatrix}
+            \cos\theta & \sin\theta & 0 \\
+            -\sin\theta & \cos\theta & 0 \\
+            0 & 0 & 1
+        \end{pmatrix}
+    
+    .. math::
+        \vec{U}' = R_\theta \vec{U}
+    
+    2. Compute the mean vertical wind component and rotate the data so that this component aligns with the z-axis:
+    
+    .. math::
+        \phi = \arctan2(|\vec{U}'|_z, |\vec{U}'|_x)
+    
+    .. math::
+        R_\phi = \begin{pmatrix}
+            \cos\phi & 0 & \sin\phi \\
+            0 & 1 & 0 \\
+            -\sin\phi & 0 & \cos\phi
+        \end{pmatrix}
+    
+    .. math::
+        \vec{U}'' = R_\phi \vec{U}'
+
+    Usage
+    -----
+    To use this class, call the `rotate` method with high-frequency data to apply the double rotation.
+    The `compute` dummy method is included to maintain a consistent interface with other rotation classes, but it does not perform any computation.
+
+    Example
+    -------
+    .. code-block:: python
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        from FluxFox.hf import rotate
+
+        rng = np.random.default_rng(8472)
+        u = rng.normal(1, 0.5, 100)
+        v = rng.normal(0.5, 0.2, 100)
+        w = rng.normal(u*0.05 + v*0.06, 0.1, 100)
+        raw = pd.DataFrame({
+            'u': u,
+            'v': v,
+            'w': w
+        })
+        dr = rotate.RotateDouble()
+        rotated = dr.rotate(raw, u_col='u', v_col='v', w_col='w')
+
+        fig, axs = plt.subplots(3, 1, figsize=(8, 8))
+        for ax, col in zip(axs, ['u', 'v', 'w']):
+            ax.plot(raw[col], label='Unrotated')
+            ax.plot(rotated[col], label='Rotated')
+            ax.axhline(raw[col].mean(), color='C0', linestyle='--', label='Unrotated Mean')
+            ax.axhline(rotated[col].mean(), color='C1', linestyle='--', label='Rotated Mean')
+            ax.set_title(col)
+        axs[0].legend()
+        plt.tight_layout()
+        plt.show()
+    """
     def __init__(self):
-        r"""
-        Initialize the DoubleRotation object.
-        This class provides an interface for performing a double rotation on high-frequency wind data.
-        The first rotation aligns the mean horizontal wind direction with the x-axis, and the second rotation aligns the mean vertical wind component with the z-axis.
-
-        Steps:
-        1. Compute the mean horizontal wind direction and rotate the data so that this direction aligns with the x-axis:
-        
-        .. math::
-            \theta = \arctan2(|\vec{U}|_y, |\vec{U}|_x)
-        
-        .. math::
-            R_\theta = \begin{pmatrix}
-                \cos\theta & \sin\theta & 0 \\
-                -\sin\theta & \cos\theta & 0 \\
-                0 & 0 & 1
-            \end{pmatrix}
-        
-        .. math::
-            \vec{U}' = R_\theta \vec{U}
-        
-        2. Compute the mean vertical wind component and rotate the data so that this component aligns with the z-axis:
-        
-        .. math::
-            \phi = \arctan2(|\vec{U}'|_z, |\vec{U}'|_x)
-        
-        .. math::
-            R_\phi = \begin{pmatrix}
-                \cos\phi & 0 & \sin\phi \\
-                0 & 1 & 0 \\
-                -\sin\phi & 0 & \cos\phi
-            \end{pmatrix}
-        
-        .. math::
-            \vec{U}'' = R_\phi \vec{U}'
-
-        Usage
-        -----
-        To use this class, call the `rotate` method with high-frequency data to apply the double rotation.
-        The `compute` dummy method is included to maintain a consistent interface with other rotation classes, but it does not perform any computation.
-
-        Example
-        -------
-        .. code-block:: python
-            import numpy as np
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            from FluxFox.hf import rotate
-
-            rng = np.random.default_rng(8472)
-            u = rng.normal(1, 0.5, 100)
-            v = rng.normal(0.5, 0.2, 100)
-            w = rng.normal(u*0.05 + v*0.06, 0.1, 100)
-            raw = pd.DataFrame({
-                'u': u,
-                'v': v,
-                'w': w
-            })
-            dr = rotate.DoubleRotation()
-            rotated = dr.rotate(raw, u_col='u', v_col='v', w_col='w')
-
-            fig, axs = plt.subplots(3, 1, figsize=(8, 8))
-            for ax, col in zip(axs, ['u', 'v', 'w']):
-                ax.plot(raw[col], label='Unrotated')
-                ax.plot(rotated[col], label='Rotated')
-                ax.axhline(raw[col].mean(), color='C0', linestyle='--', label='Unrotated Mean')
-                ax.axhline(rotated[col].mean(), color='C1', linestyle='--', label='Rotated Mean')
-                ax.set_title(col)
-            axs[0].legend()
-            plt.tight_layout()
-            plt.show()
-        """
         pass
     def compute(
         self, 
@@ -523,6 +522,12 @@ class DoubleRotation:
 
         return df_out
 
+__all__ = [
+    "RotatePlanarFit",
+    "RotateDouble",
+    "PlanarFitResult"
+]
+
 if __name__ == "__main__":
     import numpy as np
     import pandas as pd
@@ -572,7 +577,7 @@ if __name__ == "__main__":
     })
 
     # compute planar fit matrix
-    pf = PlanarFitRotation()
+    pf = RotatePlanarFit()
     pf_res = pf.compute(
         mean_df=mean_df,
         u_bar_col="u",

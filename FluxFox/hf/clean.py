@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pandas as pd
 import numpy as np
 
@@ -10,7 +12,7 @@ def _despike_window(chunk_df, z_thresh):
         chunk_keep = z.abs() < z_thresh
         return chunk_keep.to_numpy()
 
-def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) -> pd.DataFrame:
+def despike_mds(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) -> pd.DataFrame:
     """
     2nd derivative MAD despiker.
 
@@ -74,4 +76,5 @@ def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) 
 
     return keep_1 | keep_2
 
-__all__ = ["despike_hf"]
+
+__all__ = ["despike_mds"]
