@@ -126,6 +126,8 @@ def timelag_auto_opt_fratini():
     the data is split into humidity bins (by quantile? by absolute value?) and the timelag is computed for each bin separately. The plausibility window is then computed for each bin separately, and the timelag is applied to the data in each bin separately.
 
     Follow the design pattern of RotatePlanarFit.
+
+    TODO: implement
     """
 
 __all__ = ["timelag_covmax", "timelag_nominal"]

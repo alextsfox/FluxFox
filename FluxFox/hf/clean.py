@@ -76,5 +76,6 @@ def despike_mds(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int)
 
     return keep_1 | keep_2
 
+# TODO: implement skew and kurtosis tests, dropout detection, and other despiking methods from Vickers and Mahrt (1997) and other sources.
 
 __all__ = ["despike_mds"]
