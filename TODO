@@ -1,1 +1,2 @@
 compare results to REddyPro
+Prefer INFO over WARNING unless it's a serious problem

@@ -1,6 +1,15 @@
 import pandas as pd
 import numpy as np
 
+def _despike_window(chunk_df, z_thresh):
+        double_diff = chunk_df.diff() - chunk_df.shift(-1).diff()
+        median = double_diff.median()
+        mad = (double_diff - median).abs().median()
+        z = (double_diff - median) / mad
+        z = z.fillna(0).replace([np.inf, -np.inf], 0)
+        chunk_keep = z.abs() < z_thresh
+        return chunk_keep.to_numpy()
+
 def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) -> pd.DataFrame:
     """
     2nd derivative MAD despiker.
@@ -38,15 +47,6 @@ def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) 
     if chunksize <= step_size*2:
         raise ValueError(f"chunksize must be greater than {step_size*2}")
 
-    def despike_window(chunk_df, z_thresh):
-        double_diff = chunk_df.diff() - chunk_df.shift(-1).diff()
-        median = double_diff.median()
-        mad = (double_diff - median).abs().median()
-        z = (double_diff - median) / mad
-        z = z.fillna(0).replace([np.inf, -np.inf], 0)
-        chunk_keep = z.abs() < z_thresh
-        return chunk_keep.to_numpy()
-
     npoints = df.shape[0]
 
     # despike in 2 passes: first pass starts at the beginning, second pass starts at an offset
@@ -56,7 +56,7 @@ def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) 
     while start < npoints:
         end = min(start + chunksize, npoints)
         chunk_df = df.iloc[start:end]
-        chunk_keep = despike_window(chunk_df, z_thresh)
+        chunk_keep = _despike_window(chunk_df, z_thresh)
         keep_1.iloc[start:end] = chunk_keep
         start += chunksize
 
@@ -66,7 +66,7 @@ def despike_hf(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) 
     while start < npoints:
         end = min(start + chunksize, npoints)
         chunk_df = df.iloc[start:end]
-        chunk_keep = despike_window(chunk_df, z_thresh)
+        chunk_keep = _despike_window(chunk_df, z_thresh)
         keep_2.iloc[start:end] = chunk_keep
         start += chunksize
     keep_1.iloc[-step_size:] = False  # edge case: default to keep_2 for last step_size datapoints
