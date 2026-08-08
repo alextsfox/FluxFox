@@ -11,5 +11,11 @@ Includes modules for
 - Other utility functions (`utils`)
 """
 
-from .clean import despike_mds
-from .rotate import RotatePlanarFit, RotateDouble, PlanarFitResult
+from .clean import despike_mds  # noqa: F401
+from .rotate import PlanarFitResult, RotateDouble, RotatePlanarFit  # noqa: F401
+from .timelag import (
+    TimelagAutoOptFratini,  # noqa: F401
+    TimelagAutoOptFratiniResult,  # noqa: F401
+    timelag_covmax,  # noqa: F401
+    timelag_wind,  # noqa: F401
+)

@@ -11,7 +11,7 @@ import numpy as np
 from collections.abc import Callable
 from dataclasses import dataclass
 
-def timelag_nominal(obs: pd.Series, n_wind: float, e_wind: float, z_wind: float, n_sep: float, e_sep: float, z_sep: float, acq_freq: float, use_vertical : bool = False, min_ws : float = 0.1) -> tuple[pd.Series, int]:
+def timelag_wind(obs: pd.Series, n_wind: float, e_wind: float, z_wind: float, n_sep: float, e_sep: float, z_sep: float, acq_freq: float, use_vertical : bool = False, min_ws : float = 0.1) -> tuple[pd.Series, int]:
     """
     Compute the nominal time lag between two time series from 2 instruments based on the wind speed and separation distance between the instruments.
 
@@ -176,7 +176,7 @@ class TimelagAutoOptFratini:
         n_rh_classes : int, optional
             The number of relative humidity classes to use for binning the data. Default is 6.
         window_size : pd.Timedelta, optional
-            The size of the moving window for computing the median timelag and plausibility window. If None, a default window size will be used (e.g., 1 month).
+            The size of the moving window for computing the median timelag and plausibility window. If None, a default window size will be used (2 months).
         min_periods : int, optional
             The minimum number of observations in the window required to compute the median timelag. Default is 500
 
@@ -190,6 +190,8 @@ class TimelagAutoOptFratini:
             raise TypeError("lag_series must be a pandas Series.")
         if not isinstance(lag_series.index, pd.DatetimeIndex):
             raise TypeError("lag_series must have a DatetimeIndex.")
+        if window_size is None:
+            window_size = pd.Timedelta(days=60)
         if not isinstance(window_size, (pd.Timedelta, str)) and window_size is not None:
             if isinstance(window_size, str):
                 try:
@@ -256,7 +258,8 @@ class TimelagAutoOptFratini:
         """
         if self.result is None:
             raise ValueError("No result available. Please run compute() first.")
-        
+
+        # TODO: implement the application of tau_h2o if rh_series was provided in compute()
         tau = self.result.tau["tau_opt"]
         obs_shifted = obs.shift(-tau)
         return obs_shifted
@@ -268,4 +271,4 @@ class TimelagAutoOptFratini:
 
 
 
-__all__ = ["timelag_covmax", "timelag_nominal", "TimelagAutoOptFratini", "TimelagAutoOptFratiniResult"]
+__all__ = ["timelag_covmax", "timelag_wind", "TimelagAutoOptFratini", "TimelagAutoOptFratiniResult"]
