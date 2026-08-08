@@ -12,7 +12,7 @@ def _despike_window(chunk_df, z_thresh):
         chunk_keep = z.abs() < z_thresh
         return chunk_keep.to_numpy()
 
-def despike_mds(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) -> pd.DataFrame:
+def despike_mad(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int) -> pd.DataFrame:
     """
     2nd derivative MAD despiker.
 
@@ -21,7 +21,6 @@ def despike_mds(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int)
         2. Flag values as spikes if their absolute z-score exceeds the corresponding threshold in ``z_thresh*0.6745`` (scaling factor converts from std units to MAD units).
     * Repeat the loop with an offset of 2 datapoints to reduce edge effects
     * Remove datapoints flagged as spikes by BOTH passes.
-    * Linearly interpolate removed spikes
 
     Parameters
     ----------
@@ -78,4 +77,4 @@ def despike_mds(df: pd.DataFrame, z_thresh: float | list[float], chunksize: int)
 
 # TODO: implement skew and kurtosis tests, dropout detection, and other despiking methods from Vickers and Mahrt (1997) and other sources.
 
-__all__ = ["despike_mds"]
+__all__ = ["despike_mad"]
