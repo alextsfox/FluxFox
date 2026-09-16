@@ -21,6 +21,7 @@ EPS = MV / MD
 
 R = 8.314463
 """J/mol/K, universal gas constant"""
+
 RV = R / MV 
 """J/kg/K, specific gas constant for water vapor"""
 
@@ -29,6 +30,13 @@ RC = R / MC
 
 RD = R / MD 
 """J/kg/K, specific gas constant for dry air"""
+
+def compute_L():
+    """
+    Compute the Monin-Obukhov length (L) based on the friction velocity, temperature, and sensible heat flux.
+    """
+    # TODO: implement
+    raise NotImplementedError("compute_L is not yet implemented.")
 
 def _check_temp_c(temp_c: Any) -> None:
     if np.nanmean(temp_c) > 200:
@@ -54,6 +62,12 @@ def _check_chi_c(chi_c: Any) -> None:
     if np.nanmean(chi_c) > 0.1:
         warnings.warn(f"[thermo] WARNING: average mole fraction of CO2 is extremely high ({np.nanmean(chi_c):.3f}). Did you input ppm by mistake?")
 
+def _check_rho_v_kgm3(rho_v: Any) -> None:
+    if np.nanmean(rho_v) > 0.1:
+        warnings.warn(f"[thermo] WARNING: average water vapor density is extremely high ({np.nanmean(rho_v):.3f} kg/m^3). Did you input g/m^3 by mistake?")
+    if np.nanmean(rho_v) < 0:
+        warnings.warn(f"[thermo] WARNING: average water vapor density is negative ({np.nanmean(rho_v):.3f} kg/m^3). This is physically impossible.")
+
 def _return_any(input, output) -> Any:
     if isinstance(input, float):
         return output
@@ -66,6 +80,15 @@ def _return_any(input, output) -> Any:
     else:
         return output
 
+
+def compute_R_m(w):
+    """
+    Compute specific gas constant for moist air as ::math::`R_m = R_d (1 + 1.61w)/(1+w)`, where `w` is the mixing ratio.
+    #TODO: implement multiple-choice
+    """
+
+    return RD*(1 + w/EPS)/(1+w)
+   
 def compute_Cp_d(temp_c: Any | None=None, check_inputs:bool=True)->Any:
     """"
     Computed the specific heat capacity of dry air (J/kg/K) as a function of temperature in degrees C.
@@ -88,6 +111,7 @@ def compute_Cp_d(temp_c: Any | None=None, check_inputs:bool=True)->Any:
         Specific heat capacity of dry air in J/kg/K
     """
     
+    _repr = temp_c if temp_c is not None else np.nan
     cp_d = 1004.7
     if temp_c is not None:
         if check_inputs:
@@ -97,7 +121,27 @@ def compute_Cp_d(temp_c: Any | None=None, check_inputs:bool=True)->Any:
             1003 + 0.05*(temp_c + 23.15),
             cp_d
         )
-    return _return_any(temp_c, cp_d)
+    return _return_any(_repr, cp_d)
+
+def compute_Cv_d(temp_c: Any | None=None, check_inputs: bool=True)->Any:
+    """
+    Compute the specific heat capacity of dry air under constant volume as ::math::`C_{v,d} = C_{p,d} - R_d`
+
+    Parameters
+    ----------
+    temp_c
+        Temperature, in degrees C. Can be a float, np.ndarray, pd.Series, or pd.DataFrame.
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values to ensure they are within reasonable ranges for the expected units. 
+        Setting this to False will skip the checks, which may be useful for performance reasons if you are confident in the input data units. Default is True.
+    
+    Returns
+    -------
+    Cv_d
+        Specific heat capacity of dry air in J/kg/K
+        """
+    cv = compute_Cp_d(temp_c, check_inputs) - RD
+    return _return_any(temp_c, cv)
 
 def compute_Cp_v(temp_c: Any | None=None, check_inputs: bool=True)->Any:
     """
@@ -121,6 +165,7 @@ def compute_Cp_v(temp_c: Any | None=None, check_inputs: bool=True)->Any:
     Cp_v
         Specific heat capacity of water vapor in J/kg/K
     """
+    _repr = temp_c if temp_c is not None else np.nan
     cp_v = 1862
     if temp_c is not None:
         if check_inputs:
@@ -130,7 +175,27 @@ def compute_Cp_v(temp_c: Any | None=None, check_inputs: bool=True)->Any:
             1855 + 0.2133*(temp_c + 23.15),
             cp_v
         )
-    return _return_any(temp_c, cp_v)
+    return _return_any(_repr, cp_v)
+
+def compute_Cv_v(temp_c: Any | None=None, check_inputs: bool=True)->Any:
+    """
+    Compute the specific heat capacity of water vapor under constant volume as ::math::`C_{v,v} = C_{p,v} - R_v`
+
+    Parameters
+    ----------
+    temp_c
+        Temperature, in degrees C. Can be a float, np.ndarray, pd.Series, or pd.DataFrame.
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values to ensure they are within reasonable ranges for the expected units. 
+        Setting this to False will skip the checks, which may be useful for performance reasons if you are confident in the input data units. Default is True.
+    
+    Returns
+    -------
+    Cv_v
+        Specific heat capacity of water vapor in J/kg/K
+        """
+    cv = compute_Cp_v(temp_c, check_inputs) - RV
+    return _return_any(temp_c, cv)
 
 def compute_Cp_m(
     rh_frac: Any | None=None,
@@ -178,6 +243,8 @@ def compute_Cp_m(
         Specific heat capacity of moist air in J/kg/K.
     """
 
+    _repr = next((x for x in [w, e, rh_frac, pa, temp_c] if x is not None), np.nan)
+
     if w is None:
         w = np.nan
     else:
@@ -212,6 +279,7 @@ def compute_Cp_m(
             np.isfinite(e) & np.isfinite(pa) & np.isfinite(temp_c),
             np.isfinite(rh_frac) & np.isfinite(temp_c) & np.isfinite(pa),
             np.isfinite(w),
+            np.isfinite(e) & np.isfinite(pa)
         ],
         [
             Cp_d + w * Cp_v,
@@ -222,7 +290,26 @@ def compute_Cp_m(
         ],
         default=np.nan
     )
-    return _return_any(w, Cp_m)
+    return _return_any(_repr, Cp_m)
+
+def compute_Cv_m(
+    rh_frac: Any | None=None,
+    w: Any | None=None,
+    pa: Any | None=None,
+    e: Any | None=None,
+    temp_c: Any | None=None,
+    check_inputs: bool=True)->Any:
+    """
+    Compute specific heat capacity of air at constant volume as ::math::`C_{v,m} = C_{p,m} - R_m` where ::math::`R_m` is the specific gas constant for moist air.
+    # TODO: implement "multiple-choice" behavior to compute w
+    # TODO: almost all of these "multiple-choice" functions require computing w. Just extract the compute-w logic and factor it into a compute_w function that you can call.
+    """
+    cp = compute_Cp_m(rh_frac, w, pa, e, temp_c, check_inputs)
+    R = compute_R_m(w)
+    cv = cp - R
+
+    _repr = temp_c if temp_c is not None else w if w is not None else pa if pa is not None else e if e is not None else np.nan
+    return _return_any(_repr, cv)
 
 def compute_Lv(temp_c: Any | None=None, check_inputs: bool=True)->Any:
     r"""
@@ -248,6 +335,7 @@ def compute_Lv(temp_c: Any | None=None, check_inputs: bool=True)->Any:
     Lv
         Latent heat of vaporization in J/kg.
     """
+    _repr = temp_c if temp_c is not None else np.nan
     lv = 2475998
     if temp_c is not None:
         if check_inputs:
@@ -258,7 +346,7 @@ def compute_Lv(temp_c: Any | None=None, check_inputs: bool=True)->Any:
             1.91846e6 * (temp_k / (temp_k - 33.91))**2, 
             lv
         )
-    return _return_any(temp_c, lv)
+    return _return_any(_repr, lv)
 
 def compute_Lf()->Any:
     r"""
@@ -293,6 +381,7 @@ def compute_Ls(temp_c: Any, check_inputs: bool=True)->Any:
         Latent heat of sublimation in J/kg
 
     """
+    _repr = temp_c if temp_c is not None else np.nan
     ls =  2835472
     if temp_c is not None:
         if check_inputs:
@@ -303,7 +392,7 @@ def compute_Ls(temp_c: Any, check_inputs: bool=True)->Any:
             (46782.5 + 35.8925*temp_k - 0.07414*temp_k**2 + 541.5 * np.exp(-(temp_k /123.75)**2)) / 0.018015,
             ls
         )
-    return _return_any(temp_c, ls)
+    return _return_any(_repr, ls)
 
 def compute_delta_e_sat(temp_c: Any, check_inputs: bool=True)->Any:
     r"""
@@ -329,7 +418,7 @@ def compute_delta_e_sat(temp_c: Any, check_inputs: bool=True)->Any:
     """
     if check_inputs:
         _check_temp_c(temp_c)
-    raise NotImplementedError("compute_delta_e_sat is not yet implemented. Please use compute_delta_e_sat_water or compute_delta_e_sat_ice instead.")
+    return -(2.60644*(temp_c**2 + 514.28*temp_c - 1.12627*10**6) * np.exp((temp_c*(18.678 - 0.00426439*temp_c))/(temp_c + 257.14)))/(temp_c + 257.14)**2
 
 def compute_gamma(temp_c: Any, Cp_m: Any, pa: Any, check_inputs: bool=True)->Any:
     r"""
@@ -362,6 +451,7 @@ def compute_gamma(temp_c: Any, Cp_m: Any, pa: Any, check_inputs: bool=True)->Any
     lv = compute_Lv(temp_c, check_inputs=False)
     gamma = (Cp_m * pa) / (EPS * lv)
     return _return_any(temp_c, gamma)
+
 
 def compute_e_sat_water(temp_c: Any, check_inputs: bool=True)->Any:
     r"""
@@ -535,6 +625,8 @@ def compute_rho_v(temp_c: Any, e: Any | None=None, w: Any | None=None, pa: Any |
         _check_temp_c(temp_c)
     temp_k = temp_c + 273.15
 
+    _repr = next((x for x in [e, w, chi_v, rh_frac, pa] if x is not None), temp_c)
+
     if e is None:
         e = np.nan
     else:
@@ -574,7 +666,7 @@ def compute_rho_v(temp_c: Any, e: Any | None=None, w: Any | None=None, pa: Any |
         default=np.nan
     )
 
-    return _return_any(temp_c, rho_v)
+    return _return_any(_repr, rho_v)
 
 def compute_rho_m(temp_c: Any, e: Any | None=None, w: Any | None=None, pa: Any | None=None, rh_frac: Any | None=None, chi_v: Any | None=None, check_inputs: bool=True)->Any:
     """
@@ -628,10 +720,11 @@ def compute_rho_m(temp_c: Any, e: Any | None=None, w: Any | None=None, pa: Any |
     rho_m : array-like
         Density of moist air (kg/m^3)
     """
+    _repr = next((x for x in [e, w, chi_v, rh_frac, pa] if x is not None), temp_c)
     rho_d = compute_rho_d(temp_c, pa)
     rho_v = compute_rho_v(temp_c, e=e, w=w, pa=pa, rh_frac=rh_frac, chi_v=chi_v, check_inputs=check_inputs)
     rho_m = rho_d + rho_v
-    return _return_any(temp_c, rho_m)
+    return _return_any(_repr, rho_m)
 
 def compute_chi_v(temp_c: Any | None=None, e: Any | None=None, w: Any | None=None, pa: Any | None=None, rh_frac: Any | None=None, rho_v: Any | None=None, check_inputs: bool=True)->Any:
     """
@@ -747,9 +840,251 @@ def compute_chi_c(temp_c: Any, rho_c: Any, pa: Any, check_inputs: bool=True)->An
     chi_c = rho_c * RC * temp_k / pa
     return _return_any(temp_c, chi_c)
 
+def compute_w(temp_c: Any | None = None, q: Any | None = None, e: Any | None = None, pa: Any | None = None, rh_frac: Any | None = None, rho_v: Any | None = None, check_inputs: bool=True)->Any:
+    """
+    Compute mixing ratio (kg H2O / kg Dry Air) from inputs
+
+    Allowed combinations:
+    * q (specific humidity, kg H2O/kg Moist Air)
+    * e, pa (vapor pressure and air pressure)
+    * rh_frac, temp_c, pa (relative humidity, temperature, and air pressure)
+    * rho_v, temp_c, pa (vapor density, temperature, and air pressure)
+
+    Parameters
+    ----------
+    temp_c : array-like, optional
+        Temperature, in degrees C. Required if rh_frac or rho_v is provided.
+    q : array-like, optional
+        Specific humidity (kg H2O/kg Moist Air)
+    e : array-like, optional
+        Vapor pressure (Pa)
+    pa : array-like, optional
+        Air pressure (Pa)
+    rh_frac : array-like, optional
+        Relative humidity (0-1)
+    rho_v : array-like, optional
+        Vapor density (kg/m^3)
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values to ensure they are within reasonable ranges for the expected units.
+        Setting this to False will skip the checks, which may be useful for performance reasons if you are confident in the input data units. Default is True.
+
+    Returns
+    -------
+    w : array-like
+        Mixing ratio of water vapor (kg H2O/kg Dry Air)
+    """
+    _repr = next((value for value in [q, e, rh_frac, rho_v, temp_c, pa] if value is not None), np.nan)
+
+    if q is None:
+        q = np.nan
+
+    if e is None:
+        e = np.nan
+    elif check_inputs:
+        _check_e_pa(e)
+
+    if pa is None:
+        pa = np.nan
+    elif check_inputs:
+        _check_pa_pa(pa)
+
+    if rh_frac is None:
+        rh_frac = np.nan
+    elif check_inputs:
+        _check_rh_frac(rh_frac)
+
+    if rho_v is None:
+        rho_v = np.nan
+    elif check_inputs:
+        _check_rho_v_kgm3(rho_v)
+        
+    if temp_c is None:
+        temp_c = np.nan
+    elif check_inputs:
+        _check_temp_c(temp_c)
+
+    e_from_rh = rh_frac * compute_e_sat_water(temp_c, check_inputs=False)
+    e_from_rho_v = rho_v * RV * (temp_c + 273.15)
+    w = np.select(
+        [
+            np.isfinite(q),
+            np.isfinite(e) & np.isfinite(pa),
+            np.isfinite(rh_frac) & np.isfinite(temp_c) & np.isfinite(pa),
+            np.isfinite(rho_v) & np.isfinite(temp_c) & np.isfinite(pa),
+        ],
+        [
+            compute_w_from_q(q, check_inputs=False),
+            EPS * e / (pa - e),
+            EPS * e_from_rh / (pa - e_from_rh),
+            EPS * e_from_rho_v / (pa - e_from_rho_v),
+        ],
+        default=np.nan,
+    )
+
+    return _return_any(_repr, w)
+
+def compute_q_from_w(w: Any, check_inputs: bool=True)->Any:
+    """
+    Compute specific humidity from mixing ratio.
+
+    .. math::
+        q = \\frac{w}{1 + w}
+
+    Parameters
+    ----------
+    w : array-like
+        Mixing ratio of water vapor (kg H2O/kg Dry Air)
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values to ensure they are within reasonable ranges for the expected units.
+        Setting this to False will skip the checks, which may be useful for performance reasons if you are confident in the input data units. Default is True.
+
+    Returns
+    -------
+    q : array-like
+        Specific humidity (kg H2O/kg Moist Air)
+    """
+    if check_inputs:
+        _check_w_kgkg(w)
+    q = w / (1 + w)
+    return _return_any(w, q)
+
+def compute_w_from_q(q: Any, check_inputs: bool=True)->Any:
+    """
+    Compute mixing ratio from specific humidity.
+
+    .. math::
+        w = \\frac{q}{1 - q}
+
+    Parameters
+    ----------
+    q : array-like
+        Specific humidity (kg H2O/kg Moist Air)
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values to ensure they are within reasonable ranges for the expected units.
+        Setting this to False will skip the checks, which may be useful for performance reasons if you are confident in the input data units. Default is True.
+
+    Returns
+    -------
+    w : array-like
+        Mixing ratio of water vapor (kg H2O/kg Dry Air)
+    """
+    w = q / (1 - q)
+    if check_inputs:
+        _check_w_kgkg(w)
+    return _return_any(q, w)
+
+def compute_ta_from_tson(tson_c: Any, w: Any|None=None, rh_frac: Any|None=None, ta_c: Any|None=None, pa: Any|None=None, e: Any|None=None, check_inputs: bool=True) -> Any:
+    """
+    Compute ambient temperature from sonic temperature.
+
+    .. math::
+        T_\\text{son} = T_a (1 + 0.51 q)
+
+    where :math:`q = w / (1 + w)` is specific humidity.
+
+    Allowed combinations:
+    * tson, w (best)
+    * tson, e, pa (best)
+    * tson, rh, ta, pa (less accurate, requires computing e_sat from ta)
+    * tson, rh, pa (least accurate, requires iteration)
+
+    Warning
+    -------
+    Virtual temperature is not the same as sonic temperture. To compute actual temperature from virtual temperature, use :func:`compute_ta_from_tv`.
+
+    Parameters
+    ----------
+    tson_c : array-like
+        Sonic temperature (°C)
+    w : array-like, optional
+        Mixing ratio of water vapor (kg H2O/kg Dry Air)
+    rh_frac : array-like, optional
+        Relative humidity (0-1)
+    ta_c : array-like, optional
+        Ambient temperature, if already known from another source (°C)
+    pa : array-like, optional
+        Air pressure (Pa)
+    e : array-like, optional
+        Vapor pressure (Pa)
+    check_inputs : bool, optional
+        Whether to perform a sanity check on the input values. Default is True.
+
+    Returns
+    -------
+    ta : array-like
+        Ambient temperature (°C)
+    """
+    def ta_eqn(tson_k, w):
+
+        cp_m = compute_Cp_m(w, tson_k - 273.15, check_inputs=check_inputs)  # close enough
+        cv_m = compute_Cv_m(w, tson_k - 273.15, check_inputs=check_inputs)
+        cp_d = compute_Cp_d(tson_k - 273.15, check_inputs=check_inputs)
+        cv_d = compute_Cv_d(tson_k - 273.15, check_inputs=check_inputs)
+
+        gam_m = cp_m / cv_m
+        gam_d = cp_d / cv_d
+
+        q = w / (1 + w)
+
+        # # is this correct????
+        # return tson / (gam_m/gam_d*(1 + (1/EPS-1)*q))
+        return tson / (1 + 0.51 * q)
+
+    def w_eqn(e, pa):
+        return EPS * e / (pa - e)
+
+    if w is None:
+        w = np.nan
+    else:
+        if check_inputs:
+            _check_w_kgkg(w)
+    if e is None:
+        e = np.nan
+    else:
+        if check_inputs:
+            _check_e_pa(e)
+    if pa is None:
+        pa = np.nan
+    else:
+        if check_inputs:
+            _check_pa_pa(pa)
+    if rh_frac is None:
+        rh_frac = np.nan
+    else:
+        if check_inputs:
+            _check_rh_frac(rh_frac)
+    if ta_c is None:
+        ta = np.nan
+        ta_c = np.nan
+    else:
+        if check_inputs:
+            _check_temp_c(ta_c)
+        ta = ta_c + 273.15
+    if check_inputs:
+        _check_temp_c(tson_c)
+    tson = tson_c + 273.15
+
+    ta = np.select(
+        [
+            np.isfinite(w),
+            np.isfinite(e) & np.isfinite(pa),
+            np.isfinite(rh_frac) & np.isfinite(ta) & np.isfinite(pa),
+            np.isfinite(rh_frac) & np.isfinite(pa)
+        ],
+        [
+            ta_eqn(tson, w),
+            ta_eqn(tson, w_eqn(e, pa)),
+            ta_eqn(tson, w_eqn(rh_frac * compute_e_sat_water(ta_c, check_inputs=False), pa)),
+            ta_eqn(tson, w_eqn(rh_frac * compute_e_sat_water(ta_eqn(tson, w_eqn(rh_frac * compute_e_sat_water(tson_c, check_inputs=False), pa)) - 273.15, check_inputs=False), pa))
+        ],
+        default=np.nan
+    )
+
+    return _return_any(tson_c, ta - 273.15)
+
 def compute_ta_from_tv(tv_c:Any, w:Any|None=None, rh_frac:Any|None=None, ta_c:Any|None=None, pa:Any|None=None, e:Any|None=None, check_inputs:bool=True)->Any:
     """
-    Compute ambient temperature from virtual temperature
+    Compute ambient temperature from virtual temperature. 
 
     .. math::
         T_v = T \frac{1 + w/0.622}{1+w}
@@ -766,6 +1101,10 @@ def compute_ta_from_tv(tv_c:Any, w:Any|None=None, rh_frac:Any|None=None, ta_c:An
 
     Additionally, all of the above can be provided, in which case the first valid combination will be used for each time point. (e.g. if w is not nan for index 0, then method 1 will be used for index 0. If w is nan for index 1 but vp and pa are not nan not nan, then method 2 will be used for index 1, etc.)
     
+    Warning
+    -------
+    Virtual temperature is not the same as sonic temperture. To compute actual temperature from sonic temperature, use :func:`compute_ta_from_tson`.
+
     Parameters
     ----------
     tv_c : array-like
@@ -791,7 +1130,7 @@ def compute_ta_from_tv(tv_c:Any, w:Any|None=None, rh_frac:Any|None=None, ta_c:An
     """
 
     def ta_eqn(tv, w):
-        return tv / ((1 + w/0.622)/(1 + w))
+        return tv / ((w + EPS) / (EPS*(1 + w)))
 
     def w_eqn(e, pa):
         return EPS * e / (pa - e)
@@ -811,6 +1150,11 @@ def compute_ta_from_tv(tv_c:Any, w:Any|None=None, rh_frac:Any|None=None, ta_c:An
     else:
         if check_inputs:
             _check_pa_pa(pa)
+    if rh_frac is None:
+        rh_frac = np.nan
+    else:
+        if check_inputs:
+            _check_rh_frac(rh_frac)
     if ta_c is None:
         ta = np.nan
         ta_c = np.nan
@@ -838,116 +1182,17 @@ def compute_ta_from_tv(tv_c:Any, w:Any|None=None, rh_frac:Any|None=None, ta_c:An
         default=np.nan
     )
 
-    return _return_any(tv, ta - 273.15)
-
-def compute_wpl_c_term(
-    rho_v: Any,
-    rho_c: Any,
-    rho_d: Any,
-    cov_w_rho_v: Any,
-    H: Any,
-    Cp_m: Any,
-    temp_c: Any,
-    check_inputs: bool=True
-)->Any:
-    r"""
-    Compute the Webb-Pearman-Leuning (WPL) density fluctuation correction term for CO2 flux measurements in eddy covariance systems:
-
-    ::math::
-        \begin{align}
-        F_{CO_2} &= \overline{w'\rho_c'} + \text{WPL}_c\\
-        \text{WPL}_c &= 1.6077 \frac{\rho_c}{\rho_d}\overline{w'\rho_v'} + \left(1+1.6077\frac{\rho_v}{\rho_d}\right)\frac{\rho_c H}{C_{p,m}\ \rho_m\ T_K}
-        \end{align}
-    Where :math:`\rho_v` is the mean density of water vapor, :math:`\rho_c` is the mean density of CO2, :math:`\rho_d` is the mean density of dry air, :math:`\overline{w'\rho_v'}` is the covariance of vertical wind speed and water vapor density, :math:`\overline{w'\rho_c'}` is the covariance of vertical wind speed and carbon dioxide density, :math:`H` is the sensible heat flux, :math:`C_{p,m}` is the specific heat capacity of moist air, :math:`\rho_m` is the mean density of moist air, and :math:`T_K` is the ambient temperature in Kelvin.
-
-    Parameters
-    ----------
-    rho_v : array-like
-        Density of water vapor (kg/m^3)
-    rho_c : array-like
-        Density of CO2 (kg/m^3)
-    rho_d : array-like
-        Density of dry air (kg/m^3)
-    cov_w_rho_v : array-like
-        Covariance of vertical wind speed and water vapor density (kg m-2 s-1)
-    H : array-like
-        Sensible heat flux (W m-2)
-    Cp_m : array-like
-        Specific heat capacity of moist air (J kg-1 K-1)
-    temp_c : array-like
-        Ambient temperature (°C)
-    
-    Returns
-    -------
-    wpl_c_term : array-like
-        WPL density fluctuation correction term for CO2 flux measurements (kg m-2 s-1)
-    """
-    if check_inputs:
-        _check_temp_c(temp_c)
-        if np.nanmean(rho_c) > 1:
-            warnings.warn(f"[thermo] WARNING: average density of CO2 is extremely high ({np.nanmean(rho_c):.3f} kg/m^3). Did you input mg/m^3 by mistake?")
-        if np.nanmean(rho_v) > 1:
-            warnings.warn(f"[thermo] WARNING: average density of water vapor is extremely high ({np.nanmean(rho_v):.3f} kg/m^3). Did you input g/m^3 by mistake?")
-        
-    temp_k = temp_c + 273.15                                        
-    rho_m = rho_d + rho_v
-    musig_term = (1 + 1/EPS * rho_v / rho_d)
-    return rho_c/(EPS*rho_d)*cov_w_rho_v + musig_term*rho_c*H/(Cp_m*rho_m*temp_k)
-
-def compute_wpl_v_term(
-    rho_v: Any,
-    rho_d: Any,
-    H: Any,
-    Cp_m: Any,
-    temp_c: Any,
-    check_inputs: bool=True
-)->Any:
-    r"""
-    Compute the Webb-Pearman-Leuning (WPL) density fluctuation correction term for water vapor flux measurements in eddy covariance systems.
-
-    ::math::
-        \begin{align}
-        F_{H_2O} &= \left(1 + 1.6077 \frac{\rho_v}{\rho_d}\right)\overline{w'\rho_v'} + \text{WPL}_v\\
-        \text{WPL}_v &= \left(1 + 1.6077 \frac{\rho_v}{\rho_d}\right) \frac{\rho_v H}{C_{p,m}\ \rho_m\  T_K}
-        \end{align}
-    Where :math:`\rho_v` is the mean density of water vapor, :math:`\rho_d` is the mean density of dry air, :math:`\overline{w'\rho_v'}` is the covariance of vertical wind speed and water vapor density, :math:`H` is the sensible heat flux, :math:`C_{p,m}` is the specific heat capacity of moist air, :math:`\rho_m` is the mean density of moist air, and :math:`T_K` is the ambient temperature in Kelvin.
-    
-    Parameters
-    ----------
-    rho_v : array-like
-        Density of water vapor (kg/m^3)
-    rho_d : array-like
-        Density of dry air (kg/m^3)
-    H : array-like
-        Sensible heat flux (W m-2)
-    Cp_m : array-like
-        Specific heat capacity of moist air (J kg-1 K-1)
-    temp_c : array-like
-        Ambient temperature (°C)
-    
-    Returns
-    -------
-    wpl_v_term : array-like
-        WPL density fluctuation correction term for water vapor flux measurements (kg m-2 s-1)
-    """
-    if check_inputs:
-        _check_temp_c(temp_c)
-        if np.nanmean(rho_v) > 1:
-            warnings.warn(f"[thermo] WARNING: average density of water vapor is extremely high ({np.nanmean(rho_v):.3f} kg/m^3). Did you input g/m^3 by mistake?")
-        
-    temp_k = temp_c + 273.15                                        
-    rho_m = rho_d + rho_v
-    musig_term = (1 + 1/EPS * rho_v / rho_d)
-    return musig_term*rho_v*H/(Cp_m*rho_m*temp_k)
+    return _return_any(tv_c, ta - 273.15)
 
 __all__ = [  # noqa: RUF022
     "MV", "MC", "MD", "EPS", "R", "RV", "RC", "RD",
+    "compute_R_m",
     "compute_Cp_d", "compute_Cp_v", "compute_Cp_m", 
+    "compute_Cv_d", "compute_Cv_v", "compute_Cv_m",
     "compute_Lv", "compute_Lf", "compute_Ls", 
     "compute_gamma", "compute_delta_e_sat",
     "compute_e_sat_water", "compute_e_sat_ice", 
     "compute_rho_d", "compute_rho_c", "compute_rho_v", "compute_rho_m",
     "compute_chi_v", "compute_chi_c",
-    "compute_ta_from_tv", 
-    "compute_wpl_c_term", "compute_wpl_v_term"
+    "compute_ta_from_tson", "compute_ta_from_tv", 
 ]

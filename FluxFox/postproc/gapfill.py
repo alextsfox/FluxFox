@@ -8,24 +8,12 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
-
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-
-try:
-    from skopt import BayesSearchCV
-    from skopt.space import Real, Integer
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "xgboost_gapfill requires scikit-optimize. Install it with "
-        "`pip install scikit-optimize`."
-    ) from exc
-
 
 # --------
 # Liu 2025
@@ -75,10 +63,17 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     out["_timestamp"] = (out.index - t0).total_seconds() / 86400.0
     return out
 
-
 def _default_search_space() -> dict:
     """A generic hyperparameter search space for HistGradientBoostingRegressor.
     """
+    try: 
+        from skopt.space import Real, Integer
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "xgboost_gapfill requires scikit-optimize. Install it with "
+            "`pip install scikit-optimize`."
+        ) from exc
+    
     return {
         "learning_rate": Real(0.01, 0.3, prior="log-uniform"),
         "max_iter": Integer(100, 600),
@@ -88,29 +83,28 @@ def _default_search_space() -> dict:
         "l2_regularization": Real(1e-4, 10.0, prior="log-uniform"),
     }
 
-
 def gapfill_xgb_liu_2025(
     df: pd.DataFrame,
     tgt_col: str,
-    ta_col: Optional[str] = None,
-    ppfd_col: Optional[str] = None,
-    sw_in_col: Optional[str] = None,
-    vpd_col: Optional[str] = None,
-    tsoil_col: Optional[str] = None,
-    swc_col: Optional[str] = None,
-    ppfd_dir_col: Optional[str] = None,
-    ppfd_dif_col: Optional[str] = None,
-    gcc_col: Optional[str] = None,
-    evi_col: Optional[str] = None,
-    extra_predictor_cols: Optional[Sequence[str]] = None,
+    ta_col: str | None = None,
+    ppfd_col: str | None = None,
+    sw_in_col: str | None = None,
+    vpd_col: str | None = None,
+    tsoil_col: str | None = None,
+    swc_col: str | None = None,
+    ppfd_dir_col: str | None = None,
+    ppfd_dif_col: str | None = None,
+    gcc_col: str | None = None,
+    evi_col: str | None = None,
+    extra_predictor_cols: Sequence[str] | None = None,
     n_missing_allowed: int = 0,
     hyper_train_frac: float = 0.2,
     hyper_test_frac: float = 0.07,
     train_frac: float = 0.8,
     n_bayes_iter: int = 50,
     cv_folds: int = 5,
-    random_state: Optional[int] = None,
-    search_space: Optional[dict] = None,
+    random_state: int | None = None,
+    search_space: dict | None = None,
     verbose: bool = True,
 ) -> XGBGapfillResult:
     """Gap-fill a flux time series using a gradient-boosted tree model.
@@ -175,6 +169,14 @@ def gapfill_xgb_liu_2025(
         "was gap-filled" indicator series, the fitted model, and
         diagnostic information. (See ``XGBGapfillResult`` docstring.)
     """
+
+    try:
+        from skopt import BayesSearchCV
+    except ImportError as exc:  # pragma: no cover
+        raise ImportError(
+            "xgboost_gapfill requires scikit-optimize. Install it with "
+            "`pip install scikit-optimize`."
+        ) from exc
     
     # 1. Validate inputs
     
@@ -441,18 +443,18 @@ class MDSGapfillResult:
     n_filled: int
     n_remaining: int
 
-
 def gapfill_mds_reichstein_2005(
     df: pd.DataFrame,
     tgt_col: str,
-    ta_col: Optional[str] = None,
-    sw_in_col: Optional[str] = None,
-    vpd_col: Optional[str] = None,
-    tol_sw: Optional[float] = 50,
-    tol_ta: Optional[float] = 2.5,
-    tol_vpd: Optional[float] = 0.5,
+    ta_col: str | None = None,
+    sw_in_col: str | None = None,
+    vpd_col: str | None = None,
+    tol_sw: float | None = 50,
+    tol_ta: float | None = 2.5,
+    tol_vpd: float | None = 0.5,
     max_window_days: int = 28,
     min_samples: int = 5,
+    pbar : bool = False,
     verbose: bool = True,
 ) -> MDSGapfillResult:
     """
@@ -489,6 +491,8 @@ def gapfill_mds_reichstein_2005(
         Maximum half-window size in days.
     min_samples : int, default 5
         Minimum number of observed candidate values required for a fill.
+    pbar : bool, default False
+        Show a progress bar for gap-filling. Requires tqdm to be installed.
     verbose : bool, default True
         Print progress summary.
 
@@ -534,9 +538,9 @@ def gapfill_mds_reichstein_2005(
     if vpd_col is not None and tol_vpd is None:
         raise ValueError("tol_vpd must be provided when vpd_col is provided")
 
-    # tol_sw: Optional[float] = 50,
-    # tol_ta: Optional[float] = 2.5,
-    # tol_vpd: Optional[float] = 0.5,
+    # tol_sw: float | None = 50,
+    # tol_ta: float | None = 2.5,
+    # tol_vpd: float | None = 0.5,
     # max_window_days: int = 28,
     # min_samples: int = 5,
     if tol_sw < 0:
@@ -575,7 +579,7 @@ def gapfill_mds_reichstein_2005(
     method_used.loc[gap_mask] = ["unfilled", 0]
 
     window_days_sequence = sorted(
-        set([
+        set([  # noqa: C405
             max(1, max_window_days // 4),
             max(1, max_window_days // 2),
             max_window_days,
@@ -586,7 +590,19 @@ def gapfill_mds_reichstein_2005(
         print(f"[mds_gapfill] {len(gap_times)} gaps to fill")
 
     # 3. Fill each gap
-    for ts in tqdm(gap_times, desc="[mds_gapfill] Filling gaps"):
+    if pbar:
+        try:
+            from tqdm import tqdm
+            _iter = tqdm(gap_times, desc="[mds_gapfill] Filling gaps")
+        except ImportError:
+            pbar = False
+            warnings.warn(
+                "tqdm not installed; progress bar disabled. Install tqdm for a progress bar."
+            )
+    if not pbar:
+        _iter = gap_times
+        
+    for ts in _iter:
         row = work.loc[ts]
         filled_value = None
         method = None

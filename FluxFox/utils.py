@@ -26,7 +26,7 @@ def compute_WY_DOWY(timestamps:pd.DatetimeIndex) -> pd.DataFrame:
         raise TypeError("timestamps must be a pandas DatetimeIndex")
 
     wy = np.where(timestamps.month.isin(range(1, 10)), timestamps.year, timestamps.year + 1)
-    dowy = (timestamps - pd.to_datetime(wy.astype(str) + "-10-01")).days + 1
+    dowy = (timestamps - pd.to_datetime((wy - 1).astype(str) + "-10-01")).days + 1
 
     return pd.DataFrame({"WY": wy, "DOWY": dowy}, index=timestamps, dtype=int)
 

@@ -39,8 +39,8 @@ def compute_isday(timestamps: pd.DatetimeIndex, lat: float, lon: float, elev: fl
     panel.set_position(lat, lon, elev)
     dates = pd.date_range("2019-01-01", "2019-12-31 23:59:59", freq=timestamps[1] - timestamps[0])
     powers = []
-    for d in dates:
-        panel.set_datetime(d.to_pydatetime())
+    for dt in dates:
+        panel.set_datetime(dt.to_pydatetime())
         powers.append(panel.power())
     powers = pd.DataFrame({"SW_IN_POT": powers, "doy": dates.dayofyear, "h": dates.hour, "m":dates.minute})
 
