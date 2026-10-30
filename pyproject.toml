@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "FluxFox"
+version = "0.0.1"
+description = "A collection of module and functions for processing eddy covariance data. Contains pre-processing, data conditioning, post-processing, scientific analysis, and data acquisition tools."
+readme = "README.md"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [
+  { name = "Alexander Fox" }
+]
+keywords = ["eddy covariance", "ec", "micromet", "micrometeorology", "eddy flux", "eddy", "ec", "ameriflux", "fluxnet", "ustar", "u*", "gpp", "nee", "et", "evapotranspiration"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "numpy>=1.21.3",
+  "pandas>=1.4.0",
+  "solarpy",
+  "scipy",
+  "scikit-learn",
+  "matplotlib",
+]
+
+[project.optional-dependencies]
+ameriflux = ["requests", "openpyxl"]
+hf = ["statsmodels"]
+postproc = ["tqdm>=4.0", "scikit-optimize"]
+test = ["pyarrow>=13.0.0"]
+all = [
+  "requests",
+  "openpyxl",
+  "statsmodels",
+  "tqdm>=4.0",
+  "scikit-optimize",
+  "pyarrow>=13.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/alextsfox/FluxFox"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["FluxFox*"]

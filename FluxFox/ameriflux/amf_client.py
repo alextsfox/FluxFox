@@ -7,6 +7,7 @@ Client for retrieving AmeriFlux data.
 
 from dataclasses import dataclass
 from time import sleep
+import warnings
 import zipfile
 import tempfile
 from io import StringIO
@@ -44,6 +45,7 @@ def retrieve_ameriflux(
     email: str,
     intended_use: Literal["synthesis", "remote_sensing", "model", "other_research", "education", "other"],
     use_descr: str,
+    data_policy: Literal["auto", "CCBY4.0", "LEGACY"] = "auto",
 ) -> AmerifluxData:
     """Retrieve AmeriFlux BASE-BADM data for a single site.
 
@@ -59,6 +61,14 @@ def retrieve_ameriflux(
         The intended use of the data.
     use_descr : str
         A description of how the data will be used.
+    data_policy : Literal["auto", "CCBY4.0", "LEGACY"], optional
+        The data policy to use when downloading data. "auto" will try "CCBY4.0" first and fall back to "LEGACY" if no data is found.
+        "CCBY4.0" will only attempt to download data under the Creative Commons BY 4.0 license.
+        "LEGACY" will attempt to download data under the legacy AmeriFlux data policy. 
+    
+    Important
+    ---------
+    If the "LEGACY" data policy is used, the site PIs must be contacted and have the opportunity to contribute substantively to any work involving analyses of this data intended for publication.
 
     Returns
     -------
@@ -69,6 +79,7 @@ def retrieve_ameriflux(
         lat   : site latitude (degrees).
         lon   : site longitude (degrees).
         elev  : site elevation (metres).
+        doi   : site DOI (if available).
 
     Examples
     --------
@@ -83,15 +94,27 @@ def retrieve_ameriflux(
     >>> result.bif.head()
     >>> result.zmeas.head()
     """
+    if data_policy not in {"auto", "CCBY4.0", "LEGACY"}:
+        raise ValueError("data_policy must be 'auto', 'CCBY4.0', or 'LEGACY'")
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         out_dir = Path(tmpdir)
+        print(out_dir)
 
         try:
-            zip_paths = _download_base_data(site_id, username, email, intended_use, use_descr, out_dir)
+            policy_warn = data_policy == "LEGACY"
+            zip_paths = _download_base_data(site_id, username, email, intended_use, use_descr, out_dir, data_policy="CCBY4.0" if data_policy == "auto" else data_policy)
+            if not zip_paths and data_policy == "auto":
+                policy_warn = True
+                zip_paths = _download_base_data(site_id, username, email, intended_use, use_descr, out_dir, data_policy="LEGACY")
+                if not zip_paths:
+                    raise ValueError(f"No data downloaded for site '{site_id}'.")
 
-            if not zip_paths:
-                raise ValueError(f"No data downloaded for site '{site_id}'.")
+            if policy_warn:
+                warnings.warn("Falling back to LEGACY data policy. You MUST cite the site team if using this data for in-depth analyses for publication.", UserWarning)
 
+            from time import sleep
+            sleep(300)
             data, bif_path = _extract_base_zip(zip_paths[0])
 
             bif = _load_bif(bif_path) if (bif_path and bif_path.exists()) else None
@@ -111,6 +134,19 @@ def retrieve_ameriflux(
 # ------------------------------------------------------------------
 # Private helpers
 # ------------------------------------------------------------------
+
+def _extract_citation(bif: pd.DataFrame) -> str:
+    if bif is None or bif.empty:
+        return ""
+    doi = bif.loc[bif["VARIABLE_GROUP"] == "GRP_DOI"]
+    if doi.empty:
+        return ""
+    doi = doi.loc[doi["VARIABLE"] == "DOI"]
+    if doi.empty:
+        return ""
+    print(doi)
+    return doi.iloc[0]["DATAVALUE"]
+
 
 def _download_base_data(
     site_id: str,

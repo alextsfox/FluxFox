@@ -1,0 +1,46 @@
+Test the package build (or run tests/test_install.sh)
+
+rm -rf .venv dist build FluxFox.egg-info
+python -m venv .venv && source .venv/bin/activate
+python -m pip install -U pip build
+python -m build
+project_root="$(pwd)"
+pushd "$(mktemp -d)" && pip install "$project_root"/dist/*.whl
+# python3 -m unittest discover -s "/Users/alex/Library/CloudStorage/OneDrive-UniversityofWyoming/Work/UWyo/Research/FluxFox/tests/" -p "test.py" -v
+python -c "import FluxFox; print(FluxFox.__file__); from FluxFox import postproc; print(postproc.__name__)"
+popd
+deactivate
+rm -rf .venv dist build FluxFox.egg-info
+
+Upload to TestPyPI
+rm -rf dist build FluxFox.egg-info
+python -m build
+python -m twine check dist/*
+python -m twine upload -r testpypi dist/*
+
+Check that the TestPyPI upload worked
+rm -rf dist build FluxFox.egg-info
+pushd "$(mktemp -d)"
+python -m venv .venv && source .venv/bin/activate
+pip install --no-cache-dir --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ "FluxFox[all]"
+python -c "import FluxFox; print(FluxFox.__file__); from FluxFox import postproc; print(postproc.__name__); print(FluxFox.__version__)"
+deactivate
+popd
+
+Upload to PyPI
+rm -rf dist build FluxFox.egg-info
+python -m build
+python -m twine check dist/*
+python -m twine upload -r pypi dist/*
+
+Check that it worked
+rm -rf dist build FluxFox.egg-info
+pushd "$(mktemp -d)"
+python -m venv .venv && source .venv/bin/activate
+pip install "FluxFox[all]"
+python -c "import FluxFox; print(FluxFox.__file__); from FluxFox import postproc; print(postproc.__name__)"
+deactivate
+popd
+
+testing
+python -m unittest discover tests/ -v

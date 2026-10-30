@@ -15,3 +15,4 @@ from . import postproc
 from . import utils
 
 __all__ = ["ameriflux", "thermo", "postproc", "utils"]
+__version__ = "0.0.1"
